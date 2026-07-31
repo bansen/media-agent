@@ -38,6 +38,7 @@ class DeployAssetTests(unittest.TestCase):
         self.assertIn("/etc/nginx/conf.d/media-agent.conf", workflow)
         self.assertIn("media-agent-app", compose)
         self.assertIn("content_agent.web", dockerfile)
+        self.assertIn("COPY .env.example ./.env.example", dockerfile)
         self.assertIn("--host\", \"0.0.0.0", dockerfile)
 
     def test_deploy_script_bootstraps_env_file_for_first_run(self):

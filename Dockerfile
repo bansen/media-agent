@@ -10,7 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY content_agent ./content_agent
 COPY .agents ./.agents
-COPY .env.example ./ ./
+COPY .env.example ./.env.example
 
 RUN mkdir -p output
 
