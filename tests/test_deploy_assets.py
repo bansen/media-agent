@@ -33,6 +33,7 @@ class DeployAssetTests(unittest.TestCase):
 
         self.assertIn("ghcr.io", workflow)
         self.assertIn("ALIYUN_HOST", workflow)
+        self.assertIn("ALIYUN_SSH_PASSPHRASE", workflow)
         self.assertIn("/opt/media-agent", workflow)
         self.assertIn("deploy/nginx.media-agent.conf", workflow)
         self.assertIn("/etc/nginx/conf.d/media-agent.conf", workflow)

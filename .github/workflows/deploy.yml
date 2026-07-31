@@ -62,6 +62,7 @@ jobs:
           host: ${{ secrets.ALIYUN_HOST }}
           username: ${{ secrets.ALIYUN_USER }}
           key: ${{ secrets.ALIYUN_SSH_KEY }}
+          passphrase: ${{ secrets.ALIYUN_SSH_PASSPHRASE }}
           port: ${{ secrets.ALIYUN_SSH_PORT || 22 }}
           source: "docker-compose.prod.yml,scripts/deploy.sh,.env.example,deploy/nginx.media-agent.conf"
           target: "/opt/media-agent"
@@ -76,6 +77,7 @@ jobs:
           host: ${{ secrets.ALIYUN_HOST }}
           username: ${{ secrets.ALIYUN_USER }}
           key: ${{ secrets.ALIYUN_SSH_KEY }}
+          passphrase: ${{ secrets.ALIYUN_SSH_PASSPHRASE }}
           port: ${{ secrets.ALIYUN_SSH_PORT || 22 }}
           envs: APP_IMAGE,GHCR_USERNAME,GHCR_TOKEN
           script: |

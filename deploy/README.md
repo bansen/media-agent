@@ -34,6 +34,7 @@ REPO_NAME=media-agent ./scripts/publish_private_repo.sh
 - `ALIYUN_HOST`: ECS 公网 IP 或域名
 - `ALIYUN_USER`: SSH 用户，例如 `root`
 - `ALIYUN_SSH_KEY`: 私钥内容
+- `ALIYUN_SSH_PASSPHRASE`: 如果私钥创建时设置了密码短语，就填这个；无密码私钥可不填
 - `ALIYUN_SSH_PORT`: SSH 端口，默认 `22`
 
 推送到 `main` 后，Actions 会运行测试、构建 Docker 镜像并部署到服务器 `/opt/media-agent`。
