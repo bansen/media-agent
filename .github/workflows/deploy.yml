@@ -63,7 +63,7 @@ jobs:
           username: ${{ secrets.ALIYUN_USER }}
           key: ${{ secrets.ALIYUN_SSH_KEY }}
           port: ${{ secrets.ALIYUN_SSH_PORT || 22 }}
-          source: "docker-compose.prod.yml,scripts/deploy.sh,.env.example"
+          source: "docker-compose.prod.yml,scripts/deploy.sh,.env.example,deploy/nginx.media-agent.conf"
           target: "/opt/media-agent"
 
       - name: Deploy to Aliyun ECS
@@ -85,3 +85,16 @@ jobs:
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
             export APP_IMAGE="$APP_IMAGE"
             sh scripts/deploy.sh
+            if command -v nginx >/dev/null 2>&1; then
+              if [ "$(id -u)" -eq 0 ]; then
+                cp deploy/nginx.media-agent.conf /etc/nginx/conf.d/media-agent.conf
+                nginx -t
+                nginx -s reload
+              else
+                sudo cp deploy/nginx.media-agent.conf /etc/nginx/conf.d/media-agent.conf
+                sudo nginx -t
+                sudo nginx -s reload
+              fi
+            else
+              echo "Nginx not found on server. Skipping reverse proxy reload."
+            fi

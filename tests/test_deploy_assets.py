@@ -34,9 +34,17 @@ class DeployAssetTests(unittest.TestCase):
         self.assertIn("ghcr.io", workflow)
         self.assertIn("ALIYUN_HOST", workflow)
         self.assertIn("/opt/media-agent", workflow)
+        self.assertIn("deploy/nginx.media-agent.conf", workflow)
+        self.assertIn("/etc/nginx/conf.d/media-agent.conf", workflow)
         self.assertIn("media-agent-app", compose)
         self.assertIn("content_agent.web", dockerfile)
         self.assertIn("--host\", \"0.0.0.0", dockerfile)
+
+    def test_deploy_script_bootstraps_env_file_for_first_run(self):
+        script = (PROJECT_ROOT / "scripts" / "deploy.sh").read_text(encoding="utf-8")
+
+        self.assertIn("cp .env.example \"$ENV_FILE\"", script)
+        self.assertIn("Created $APP_DIR/$ENV_FILE", script)
 
 
 if __name__ == "__main__":

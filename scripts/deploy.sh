@@ -8,8 +8,13 @@ export ENV_FILE
 cd "$APP_DIR"
 
 if [ ! -f "$ENV_FILE" ]; then
-  echo "Missing $APP_DIR/$ENV_FILE"
-  exit 1
+  if [ -f ".env.example" ]; then
+    cp .env.example "$ENV_FILE"
+    echo "Created $APP_DIR/$ENV_FILE from .env.example. Fill real API keys on the server for production publishing."
+  else
+    echo "Missing $APP_DIR/$ENV_FILE and .env.example"
+    exit 1
+  fi
 fi
 
 compose() {

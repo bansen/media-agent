@@ -48,17 +48,23 @@ cd /opt/media-agent
 docker compose --env-file .env.production -f docker-compose.prod.yml up -d app
 ```
 
-服务器上需要单独创建 `.env.production`：
+首次部署时，如果服务器上没有 `.env.production`，部署脚本会先从 `.env.example` 创建一个默认文件：
 
 ```bash
 cp .env.example .env.production
 ```
 
-然后填写 DeepSeek、Replicate、微信公众号等密钥。
+然后你需要登录服务器填写 DeepSeek、Replicate、微信公众号等真实密钥；已有 `.env.production` 时部署不会覆盖。
 
 ## 4. Nginx 二级域名
 
-把 `deploy/nginx.media-agent.conf` 复制到服务器 Nginx 配置中，域名使用：
+GitHub Actions 会把 `deploy/nginx.media-agent.conf` 同步到服务器，并在服务器安装了 Nginx 时自动写入：
+
+```text
+/etc/nginx/conf.d/media-agent.conf
+```
+
+域名使用：
 
 ```text
 media-agent.createbeauty.top
@@ -73,7 +79,7 @@ Cloudflare 里手动配置：
 
 ## 5. 手动部署脚本
 
-`scripts/deploy.sh` 会在服务器 `/opt/media-agent` 下启动最新镜像。GitHub Actions 会自动同步 `docker-compose.prod.yml` 和 `scripts/deploy.sh`，一般不需要本地手动运行。
+`scripts/deploy.sh` 会在服务器 `/opt/media-agent` 下启动最新镜像。GitHub Actions 会自动同步 `docker-compose.prod.yml`、`scripts/deploy.sh`、`.env.example` 和 Nginx 配置，一般不需要本地手动运行。
 
 如需从本地手动触发服务器部署，可使用：
 
@@ -84,4 +90,4 @@ export REPO_URL=https://github.com/bansen/media-agent.git
 ./deploy/deploy_server.sh
 ```
 
-Nginx 配置仍建议你手动确认后再启用，因为域名、证书和 Cloudflare 代理状态通常需要现场判断。
+Nginx 配置可由 Actions 自动启用；如果服务器没有安装 Nginx，脚本会跳过并在 Actions 日志中提示。
