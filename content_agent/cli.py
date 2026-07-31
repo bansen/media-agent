@@ -1,0 +1,175 @@
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from dataclasses import asdict, is_dataclass
+from pathlib import Path
+
+from .collectors.free_hot import collect_free_hot_candidates
+from .collectors.public_search import collect_public_search_candidates
+from .config import AgentConfig
+from .cover_generation import generate_cover_image
+from .formatters.wechat_gzh import format_wechat_markdown, write_gzh_outputs
+from .generation import generate_llm_drafts
+from .mock_data import get_mock_candidates
+from .wechat_publish import publish_wechat_draft
+from .workflow import run_keyword_workflow
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Run the content-agent MVP workflow.")
+    parser.add_argument("--keyword", required=True, help="Seed keyword, such as AI副业 or 养生.")
+    parser.add_argument(
+        "--channel",
+        default="wechat",
+        choices=["wechat", "xiaohongshu"],
+        help="Primary channel profile for keyword expansion and cover prompt.",
+    )
+    parser.add_argument(
+        "--collector",
+        default="mock",
+        choices=["mock", "public_search", "free_hot"],
+        help="Topic source collector. mock uses sample data; public_search uses paid/keyed APIs; free_hot uses free public sources.",
+    )
+    parser.add_argument("--check-config", action="store_true", help="Print redacted configuration status.")
+    parser.add_argument("--use-llm", action="store_true", help="Generate channel drafts with the configured LLM.")
+    parser.add_argument("--format-gzh", action="store_true", help="Format the WeChat draft with gzh-design skill assets.")
+    parser.add_argument("--generate-cover", action="store_true", help="Generate a cover image with Replicate.")
+    parser.add_argument("--submit-wechat-draft", action="store_true", help="Submit the formatted WeChat article to draft box.")
+    parser.add_argument("--wechat-content-html", help="Existing formatted WeChat HTML file to submit.")
+    parser.add_argument("--wechat-cover-image", help="Local cover image path used as WeChat thumb material.")
+    parser.add_argument("--output-dir", default="output", help="Directory for generated files.")
+    args = parser.parse_args(argv)
+
+    if args.check_config:
+        config = AgentConfig.from_env_file()
+        print(json.dumps(config.redacted_status(), ensure_ascii=False, indent=2))
+        return 0
+    if args.submit_wechat_draft and not args.wechat_cover_image and not args.generate_cover:
+        print("--wechat-cover-image is required when --submit-wechat-draft is used without --generate-cover", file=sys.stderr)
+        return 2
+
+    result = run_keyword_workflow(
+        args.keyword,
+        candidates=_collect_candidates(args.keyword, args.channel, args.collector),
+        primary_channel=args.channel,
+    )
+    payload = _to_jsonable(result)
+    if args.use_llm:
+        config = AgentConfig.from_env_file()
+        _progress("Loaded config")
+        _progress("Starting LLM draft generation")
+        payload["llm_drafts"] = generate_llm_drafts(result, config.build_llm_provider(), progress=_progress)
+        _progress("Finished LLM draft generation")
+    formatted_html = None
+    if args.wechat_content_html:
+        content_path = Path(args.wechat_content_html)
+        _progress(f"Loading existing WeChat HTML: {content_path}")
+        formatted_html = content_path.read_text(encoding="utf-8")
+        payload["wechat_content_html"] = str(content_path)
+    elif args.format_gzh or args.submit_wechat_draft:
+        _progress("Formatting WeChat article with gzh-design")
+        markdown = payload.get("llm_drafts", {}).get("wechat_article") or _wechat_outline_to_markdown(result.wechat_outline)
+        formatted_html = format_wechat_markdown(markdown)
+        paths = write_gzh_outputs(formatted_html, Path(args.output_dir), _safe_basename(args.keyword))
+        payload["gzh_formatting"] = {
+            "theme": "摸鱼绿(moyu-green)",
+            "clean_html": str(paths.clean_html),
+            "preview_html": str(paths.preview_html),
+        }
+        _progress("Finished gzh-design formatting")
+    cover_image_path = args.wechat_cover_image
+    if args.generate_cover:
+        _progress("Generating cover image with Replicate")
+        config = AgentConfig.from_env_file()
+        generated_cover = generate_cover_image(
+            prompt=result.cover_prompt,
+            output_dir=Path(args.output_dir),
+            basename=_safe_basename(args.keyword),
+            model=config.replicate_cover_model,
+            api_token=config.replicate_api_token,
+        )
+        cover_image_path = str(generated_cover.path)
+        payload["cover_image"] = {
+            "path": str(generated_cover.path),
+            "url": generated_cover.url,
+            "model": generated_cover.model,
+        }
+        _progress("Finished Replicate cover generation")
+    if args.submit_wechat_draft:
+        _progress("Submitting WeChat draft")
+        config = AgentConfig.from_env_file()
+        try:
+            published = publish_wechat_draft(
+                result=result,
+                content_html=formatted_html or "",
+                cover_image_path=cover_image_path or "",
+                config=config,
+            )
+            payload["wechat_draft"] = {
+                "thumb_media_id": published.thumb_media_id,
+                "response": published.response,
+            }
+            _progress("Finished WeChat draft submission")
+        except Exception as exc:
+            payload["wechat_draft_error"] = str(exc)
+            _progress(f"WeChat draft submission failed: {exc}")
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 1
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0
+
+def _to_jsonable(value):
+    if is_dataclass(value):
+        return _to_jsonable(asdict(value))
+    if isinstance(value, list):
+        return [_to_jsonable(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _to_jsonable(item) for key, item in value.items()}
+    return value
+
+
+def _progress(message: str) -> None:
+    print(f"[content-agent] {message}", file=sys.stderr, flush=True)
+
+
+def _collect_candidates(keyword: str, channel: str, collector: str):
+    if collector == "mock":
+        return get_mock_candidates(keyword, channel=channel)
+    config = AgentConfig.from_env_file()
+    if collector == "free_hot":
+        _progress("Collecting free hot candidates")
+        candidates = collect_free_hot_candidates(keyword, config=config.build_free_hot_config())
+        _progress(f"Collected {len(candidates)} free hot candidates")
+        return candidates
+    _progress("Collecting public search candidates")
+    candidates = collect_public_search_candidates(keyword, config=config.build_public_search_config())
+    _progress(f"Collected {len(candidates)} public search candidates")
+    return candidates
+
+
+def _wechat_outline_to_markdown(outline: str) -> str:
+    lines = [line.strip() for line in outline.splitlines() if line.strip()]
+    title = lines[0].replace("公众号文章：", "").strip("《》") if lines else "公众号文章"
+    body = ["# " + title]
+    for line in lines[1:]:
+        if line.startswith("结构："):
+            body.append("\n## 内容结构")
+            body.append(line.removeprefix("结构："))
+        elif line.startswith("合规："):
+            body.append("\n## 写在最后")
+            body.append(line.removeprefix("合规："))
+        else:
+            body.append("\n## " + line.split("：", 1)[0])
+            body.append(line.split("：", 1)[-1])
+    return "\n\n".join(body)
+
+
+def _safe_basename(keyword: str) -> str:
+    safe = "".join(char for char in keyword if char.isalnum() or char in {"-", "_"})
+    return safe or "article"
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

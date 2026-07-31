@@ -1,0 +1,14 @@
+services:
+  app:
+    image: ${APP_IMAGE:-ghcr.io/bansen/media-agent:main}
+    container_name: media-agent-app
+    restart: unless-stopped
+    env_file:
+      - ${ENV_FILE:-.env.production}
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - media-agent-output:/app/output
+
+volumes:
+  media-agent-output:

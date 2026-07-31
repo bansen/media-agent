@@ -1,0 +1,80 @@
+from __future__ import annotations
+
+import re
+
+from .models import ContentChannel
+
+
+FORBIDDEN_TITLE_TERMS = [
+    "暴富",
+    "稳赚",
+    "月入",
+    "躺赚",
+    "保证",
+    "根治",
+    "治愈",
+    "治疗",
+    "诊断",
+]
+
+
+def optimize_title(title: str, channel: ContentChannel) -> str:
+    clean_title = clean_source_title(title)
+    if channel == "xiaohongshu" or _looks_like_health(clean_title):
+        return _sanitize_title(_optimize_health_title(clean_title))
+    return _sanitize_title(_optimize_ai_side_hustle_title(clean_title))
+
+
+def clean_source_title(title: str) -> str:
+    clean = re.sub(r"\s+", " ", title).strip()
+    clean = re.split(r"\s+[—-]\s+|[丨｜]", clean, maxsplit=1)[0].strip()
+    clean = re.sub(r"\s+", " ", clean)
+    return clean.strip(" -_｜丨")
+
+
+def _optimize_ai_side_hustle_title(title: str) -> str:
+    if _contains_any(title, ["坑", "骗局", "卖课", "割韭菜", "造假", "避坑"]):
+        return "AI 副业热起来后，普通人最该避开的几个坑"
+    if _contains_any(title, ["轻创业", "副业", "声音变现", "AI服务", "交易", "爆发", "接单", "赚钱"]):
+        return "普通人做 AI 副业，先看懂这 3 个真实信号"
+    if _contains_any(title, ["工具", "学习", "路线", "教程", "提示词"]):
+        return "普通人学 AI，先从这 3 个能交付的小场景开始"
+    if 10 <= len(title) <= 28 and not _contains_any(title, FORBIDDEN_TITLE_TERMS):
+        return title
+    return "普通人学习 AI，先从一个能交付的小场景开始"
+
+
+def _optimize_health_title(title: str) -> str:
+    if _contains_any(title, ["久坐", "办公室", "肩颈", "腰背"]):
+        return "久坐职场女性可收藏的 4 个低成本习惯"
+    if _contains_any(title, ["睡前", "放松", "睡眠", "熬夜"]):
+        return "宝妈睡前 10 分钟，试试这份放松清单"
+    if _contains_any(title, ["气色", "养生", "健康", "习惯"]):
+        return "职场女性可收藏的 5 个低成本养生习惯"
+    return "职场女性可收藏的低成本习惯清单"
+
+
+def _sanitize_title(title: str) -> str:
+    safe_title = title
+    replacements = {
+        "暴富": "增长",
+        "稳赚": "更稳",
+        "月入": "收入",
+        "躺赚": "轻量尝试",
+        "保证": "更容易",
+        "根治": "改善",
+        "治愈": "调整",
+        "治疗": "调理",
+        "诊断": "观察",
+    }
+    for unsafe, safe in replacements.items():
+        safe_title = safe_title.replace(unsafe, safe)
+    return safe_title.strip()
+
+
+def _looks_like_health(title: str) -> bool:
+    return _contains_any(title, ["养生", "女性", "宝妈", "健康", "久坐", "气色", "睡前", "办公室"])
+
+
+def _contains_any(text: str, terms: list[str]) -> bool:
+    return any(term in text for term in terms)

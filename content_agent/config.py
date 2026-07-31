@@ -1,0 +1,138 @@
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from pathlib import Path
+
+from .collectors.free_hot import FreeHotConfig
+from .collectors.public_search import PublicSearchConfig
+from .providers.image import ReplicateImageProvider
+from .providers.llm import OpenAICompatibleLLMProvider
+from .providers.wechat import WeChatDraftPublisher
+
+
+@dataclass(frozen=True)
+class AgentConfig:
+    llm_provider: str
+    llm_base_url: str
+    llm_model: str
+    llm_api_key: str
+    replicate_api_token: str
+    replicate_cover_model_version: str
+    replicate_cover_model: str
+    wechat_app_id: str
+    wechat_app_secret: str
+    wechat_access_token: str
+    public_search_provider: str
+    bing_search_api_key: str
+    newsapi_api_key: str
+    free_hot_sources: list[str]
+    rsshub_base_url: str
+    rsshub_route: str
+    dailyhot_base_url: str
+    dailyhot_route: str
+
+    @classmethod
+    def from_env_file(cls, path: str | Path = ".env") -> "AgentConfig":
+        values = dict(os.environ)
+        env_path = Path(path)
+        if env_path.exists():
+            values.update(_parse_env_file(env_path))
+        return cls(
+            llm_provider=values.get("LLM_PROVIDER", "deepseek"),
+            llm_base_url=values.get("LLM_BASE_URL", "https://api.deepseek.com"),
+            llm_model=values.get("LLM_MODEL", "deepseek-chat"),
+            llm_api_key=values.get("LLM_API_KEY", ""),
+            replicate_api_token=values.get("REPLICATE_API_TOKEN", ""),
+            replicate_cover_model_version=values.get("REPLICATE_COVER_MODEL_VERSION", ""),
+            replicate_cover_model=values.get(
+                "REPLICATE_COVER_MODEL",
+                values.get("REPLICATE_COVER_MODEL_VERSION", "black-forest-labs/flux-1.1-pro"),
+            ),
+            wechat_app_id=values.get("WECHAT_APP_ID", ""),
+            wechat_app_secret=values.get("WECHAT_APP_SECRET", ""),
+            wechat_access_token=values.get("WECHAT_ACCESS_TOKEN", ""),
+            public_search_provider=values.get("PUBLIC_SEARCH_PROVIDER", "bing"),
+            bing_search_api_key=values.get("BING_SEARCH_API_KEY", ""),
+            newsapi_api_key=values.get("NEWSAPI_API_KEY", ""),
+            free_hot_sources=_parse_csv(values.get("FREE_HOT_SOURCES", "google_news_rss,hn,github")),
+            rsshub_base_url=values.get("RSSHUB_BASE_URL", "https://rsshub.app"),
+            rsshub_route=values.get("RSSHUB_ROUTE", "/weibo/search/hot"),
+            dailyhot_base_url=values.get("DAILYHOT_BASE_URL", "https://api-hot.imsyy.top"),
+            dailyhot_route=values.get("DAILYHOT_ROUTE", "/baidu/"),
+        )
+
+    def redacted_status(self) -> dict[str, str]:
+        return {
+            "LLM_PROVIDER": self.llm_provider or "EMPTY",
+            "LLM_BASE_URL": "SET" if self.llm_base_url else "EMPTY",
+            "LLM_MODEL": self.llm_model or "EMPTY",
+            "LLM_API_KEY": "SET" if self.llm_api_key else "EMPTY",
+            "REPLICATE_API_TOKEN": "SET" if self.replicate_api_token else "EMPTY",
+            "REPLICATE_COVER_MODEL_VERSION": "SET" if self.replicate_cover_model_version else "EMPTY",
+            "REPLICATE_COVER_MODEL": self.replicate_cover_model or "EMPTY",
+            "WECHAT_APP_ID": "SET" if self.wechat_app_id else "EMPTY",
+            "WECHAT_APP_SECRET": "SET" if self.wechat_app_secret else "EMPTY",
+            "WECHAT_ACCESS_TOKEN": "SET" if self.wechat_access_token else "EMPTY",
+            "PUBLIC_SEARCH_PROVIDER": self.public_search_provider or "EMPTY",
+            "BING_SEARCH_API_KEY": "SET" if self.bing_search_api_key else "EMPTY",
+            "NEWSAPI_API_KEY": "SET" if self.newsapi_api_key else "EMPTY",
+            "FREE_HOT_SOURCES": ",".join(self.free_hot_sources) if self.free_hot_sources else "EMPTY",
+            "RSSHUB_BASE_URL": self.rsshub_base_url or "EMPTY",
+            "RSSHUB_ROUTE": self.rsshub_route or "EMPTY",
+            "DAILYHOT_BASE_URL": self.dailyhot_base_url or "EMPTY",
+            "DAILYHOT_ROUTE": self.dailyhot_route or "EMPTY",
+        }
+
+    def build_llm_provider(self) -> OpenAICompatibleLLMProvider:
+        return OpenAICompatibleLLMProvider(
+            api_key=self.llm_api_key,
+            base_url=self.llm_base_url,
+            model=self.llm_model,
+        )
+
+    def build_image_provider(self) -> ReplicateImageProvider:
+        return ReplicateImageProvider(
+            api_token=self.replicate_api_token,
+            model_version=self.replicate_cover_model,
+        )
+
+    def build_wechat_publisher(self) -> WeChatDraftPublisher:
+        return WeChatDraftPublisher(app_id=self.wechat_app_id, app_secret=self.wechat_app_secret)
+
+    def build_public_search_config(self) -> PublicSearchConfig:
+        return PublicSearchConfig(
+            provider=self.public_search_provider,
+            bing_api_key=self.bing_search_api_key,
+            newsapi_api_key=self.newsapi_api_key,
+        )
+
+    def build_free_hot_config(self) -> FreeHotConfig:
+        return FreeHotConfig(
+            sources=self.free_hot_sources,
+            rsshub_base_url=self.rsshub_base_url,
+            rsshub_route=self.rsshub_route,
+            dailyhot_base_url=self.dailyhot_base_url,
+            dailyhot_route=self.dailyhot_route,
+        )
+
+
+def _parse_env_file(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = _strip_quotes(value.strip())
+    return values
+
+
+def _strip_quotes(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
+
+
+def _parse_csv(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
