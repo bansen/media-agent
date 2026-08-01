@@ -4,8 +4,9 @@ import argparse
 import json
 import mimetypes
 import threading
-from dataclasses import asdict, dataclass, field, is_dataclass
+from dataclasses import asdict, dataclass, field, is_dataclass, replace
 from http import HTTPStatus
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from time import time
@@ -15,6 +16,7 @@ from uuid import uuid4
 
 from sqlalchemy import select
 
+from .auth import SESSION_COOKIE, AuthStore, WeChatLoginConfig, WeChatOAuthProvider
 from .collectors.free_hot import collect_free_hot_candidates
 from .config import AgentConfig
 from .cover_generation import generate_cover_image
@@ -65,6 +67,7 @@ class WebJob:
     publish_attempts: list[dict] = field(default_factory=list)
     created_at: float = field(default_factory=time)
     updated_at: float = field(default_factory=time)
+    user_id: int | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -75,6 +78,7 @@ class WebJob:
             "error": self.error,
             "options": _options_to_json(self.options),
             "publish_attempts": list(self.publish_attempts),
+            "user_id": self.user_id,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -88,9 +92,10 @@ class JobStore:
         self._engine = build_engine(database_url)
         init_schema(self._engine)
         self._session_factory = session_factory(self._engine)
+        self.auth = AuthStore(self._session_factory)
 
-    def create(self, options: WebRunOptions) -> WebJob:
-        job = WebJob(id=uuid4().hex[:12], options=options)
+    def create(self, options: WebRunOptions, user_id: int | None = None) -> WebJob:
+        job = WebJob(id=uuid4().hex[:12], options=options, user_id=user_id)
         with self._lock:
             self._jobs[job.id] = job
         self._persist_job(job)
@@ -110,10 +115,23 @@ class JobStore:
                 return None
             return _job_from_row(row)
 
-    def list(self, limit: int = 50) -> list[WebJob]:
+    def list(self, limit: int = 50, user_id: int | None = None) -> list[WebJob]:
         with self._session_factory() as session:
-            rows = session.scalars(select(ContentJobRow).order_by(ContentJobRow.created_at.desc()).limit(limit)).all()
+            statement = select(ContentJobRow).order_by(ContentJobRow.created_at.desc()).limit(limit)
+            if user_id is not None:
+                statement = statement.where(ContentJobRow.user_id == user_id)
+            rows = session.scalars(statement).all()
             return [_job_from_row(row) for row in rows]
+
+    def user_owns_asset_path(self, user_id: int, path: Path) -> bool:
+        normalized = str(path)
+        with self._session_factory() as session:
+            row = session.scalar(
+                select(ContentAssetRow)
+                .join(ContentJobRow)
+                .where(ContentJobRow.user_id == user_id, ContentAssetRow.path == normalized)
+            )
+            return row is not None
 
     def _run_job(self, job_id: str) -> None:
         job = self.get(job_id)
@@ -209,6 +227,7 @@ class JobStore:
             if row is None:
                 row = ContentJobRow(
                     id=job.id,
+                    user_id=job.user_id,
                     keyword=job.options.keyword,
                     channel=job.options.channel,
                     collector=job.options.collector,
@@ -217,6 +236,7 @@ class JobStore:
                 )
                 session.add(row)
             row.keyword = job.options.keyword
+            row.user_id = job.user_id
             row.channel = job.options.channel
             row.collector = job.options.collector
             row.status = job.status
@@ -284,6 +304,7 @@ def _job_from_row(row: ContentJobRow) -> WebJob:
         ],
         created_at=row.created_at,
         updated_at=row.updated_at,
+        user_id=row.user_id,
     )
 
 
@@ -428,7 +449,11 @@ def run_agent_workflow(options: WebRunOptions, progress: Callable[[str], None] |
     return payload
 
 
-def submit_previewed_wechat_draft(job: WebJob, progress: Callable[[str], None] | None = None) -> dict:
+def submit_previewed_wechat_draft(
+    job: WebJob,
+    progress: Callable[[str], None] | None = None,
+    config: AgentConfig | None = None,
+) -> dict:
     if job.status in {"queued", "running", "publishing"} or not job.result:
         raise ValueError("completed preview is required before submitting")
 
@@ -443,7 +468,7 @@ def submit_previewed_wechat_draft(job: WebJob, progress: Callable[[str], None] |
     emit = progress or (lambda message: None)
     emit("Submitting WeChat draft from preview")
     content_html = Path(html_path).read_text(encoding="utf-8")
-    config = AgentConfig.from_env_file()
+    config = config or AgentConfig.from_env_file()
     published = publish_wechat_draft(
         result=_workflow_result_from_payload(result_payload),
         content_html=content_html,
@@ -461,15 +486,46 @@ def render_index_html() -> str:
     return INDEX_HTML
 
 
+def render_landing_html() -> str:
+    return LANDING_HTML
+
+
 class ContentAgentHandler(BaseHTTPRequestHandler):
     store = JobStore()
 
     def do_GET(self) -> None:
         parsed = parse.urlparse(self.path)
         if parsed.path == "/":
+            self._send_html(render_landing_html())
+            return
+        if parsed.path == "/app":
+            user = self._require_user()
+            if user is None:
+                return
             self._send_html(render_index_html())
             return
+        if parsed.path == "/auth/wechat/start":
+            self._start_wechat_auth(parsed.query)
+            return
+        if parsed.path == "/auth/wechat/callback":
+            self._finish_wechat_auth(parsed.query)
+            return
+        if parsed.path == "/auth/manual":
+            self._send_html(render_manual_auth_html())
+            return
+        if parsed.path == "/auth/logout":
+            self._logout()
+            return
+        if parsed.path == "/settings/wechat":
+            user = self._require_user()
+            if user is None:
+                return
+            account = self.store.auth.manual_wechat_account_for_user(user["id"]) or {}
+            self._send_html(render_wechat_settings_html(account=account))
+            return
         if parsed.path == "/api/config":
+            if self._require_user(json_response=True) is None:
+                return
             self._send_json(
                 {
                     "config": AgentConfig.from_env_file().redacted_status(),
@@ -479,27 +535,45 @@ class ContentAgentHandler(BaseHTTPRequestHandler):
             )
             return
         if parsed.path == "/api/jobs":
-            self._send_json({"jobs": [job.to_dict() for job in self.store.list()]})
+            user = self._require_user(json_response=True)
+            if user is None:
+                return
+            self._send_json({"jobs": [job.to_dict() for job in self.store.list(user_id=user["id"])]})
             return
         if parsed.path.startswith("/api/jobs/"):
+            user = self._require_user(json_response=True)
+            if user is None:
+                return
             job_id = parsed.path.rsplit("/", 1)[-1]
             job = self.store.get(job_id)
-            if job is None:
+            if job is None or job.user_id != user["id"]:
                 self._send_json({"error": "job not found"}, status=HTTPStatus.NOT_FOUND)
                 return
             self._send_json(job.to_dict())
             return
         if parsed.path == "/file":
-            self._send_file(parsed.query)
+            user = self._require_user(json_response=True)
+            if user is None:
+                return
+            self._send_file(parsed.query, user_id=user["id"])
             return
         self._send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
 
     def do_POST(self) -> None:
         parsed = parse.urlparse(self.path)
+        if parsed.path == "/auth/manual":
+            self._finish_manual_auth()
+            return
+        if parsed.path == "/settings/wechat":
+            self._save_wechat_settings()
+            return
         if parsed.path.startswith("/api/jobs/") and parsed.path.endswith("/submit"):
+            user = self._require_user(json_response=True)
+            if user is None:
+                return
             job_id = parsed.path.split("/")[-2]
             job = self.store.get(job_id)
-            if job is None:
+            if job is None or job.user_id != user["id"]:
                 self._send_json({"error": "job not found"}, status=HTTPStatus.NOT_FOUND)
                 return
             try:
@@ -507,6 +581,7 @@ class ContentAgentHandler(BaseHTTPRequestHandler):
                 result = submit_previewed_wechat_draft(
                     job,
                     progress=lambda message: self.store._update(job_id, event=message),
+                    config=self._wechat_publish_config_for_user(user["id"]),
                 )
                 self.store._update(job_id, status="published_draft", result=result, event="WeChat draft submission completed")
                 self.store.record_publish_attempt(
@@ -531,9 +606,12 @@ class ContentAgentHandler(BaseHTTPRequestHandler):
         if parsed.path != "/api/jobs":
             self._send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
             return
+        user = self._require_user(json_response=True)
+        if user is None:
+            return
         try:
             options = _options_from_payload(self._read_json())
-            job = self.store.create(options)
+            job = self.store.create(options, user_id=user["id"])
             self._send_json(job.to_dict(), status=HTTPStatus.ACCEPTED)
         except Exception as exc:
             self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
@@ -546,9 +624,13 @@ class ContentAgentHandler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length).decode("utf-8")
         return json.loads(raw or "{}")
 
-    def _send_html(self, html: str) -> None:
+    def _read_form_body(self) -> str:
+        length = int(self.headers.get("Content-Length", "0"))
+        return self.rfile.read(length).decode("utf-8")
+
+    def _send_html(self, html: str, status: HTTPStatus = HTTPStatus.OK) -> None:
         body = html.encode("utf-8")
-        self.send_response(HTTPStatus.OK)
+        self.send_response(status)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -562,12 +644,130 @@ class ContentAgentHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _send_file(self, query: str) -> None:
+    def _redirect(self, location: str, cookies: list[str] | None = None) -> None:
+        self.send_response(HTTPStatus.FOUND)
+        self.send_header("Location", location)
+        for cookie in cookies or []:
+            self.send_header("Set-Cookie", cookie)
+        self.end_headers()
+
+    def _session_token(self) -> str:
+        cookie = SimpleCookie(self.headers.get("Cookie", ""))
+        morsel = cookie.get(SESSION_COOKIE)
+        return morsel.value if morsel else ""
+
+    def _current_user(self) -> dict | None:
+        return self.store.auth.user_for_session(self._session_token())
+
+    def _require_user(self, json_response: bool = False) -> dict | None:
+        user = self._current_user()
+        if user is not None:
+            return user
+        if json_response:
+            self._send_json({"error": "authentication required"}, status=HTTPStatus.UNAUTHORIZED)
+        else:
+            self._redirect("/auth/wechat/start?next=/app")
+        return None
+
+    def _start_wechat_auth(self, query: str) -> None:
+        params = parse.parse_qs(query)
+        next_path = params.get("next", ["/app"])[0]
+        config = WeChatLoginConfig.from_env()
+        if not config.is_configured():
+            self._send_html(render_auth_setup_html())
+            return
+        state = self.store.auth.create_oauth_state(provider="wechat", next_path=next_path)
+        self._redirect(WeChatOAuthProvider(config).authorization_url(state=state))
+
+    def _finish_wechat_auth(self, query: str) -> None:
+        params = parse.parse_qs(query)
+        code = params.get("code", [""])[0]
+        state = params.get("state", [""])[0]
+        next_path = self.store.auth.consume_oauth_state(state, provider="wechat")
+        if not code or next_path is None:
+            self._send_json({"error": "invalid wechat login state"}, status=HTTPStatus.BAD_REQUEST)
+            return
+        provider = WeChatOAuthProvider(WeChatLoginConfig.from_env())
+        token_payload = provider.fetch_access_token(code)
+        if token_payload.get("errcode"):
+            self._send_json({"error": token_payload}, status=HTTPStatus.BAD_REQUEST)
+            return
+        profile = provider.fetch_userinfo(token_payload["access_token"], token_payload["openid"])
+        if profile.get("errcode"):
+            self._send_json({"error": profile}, status=HTTPStatus.BAD_REQUEST)
+            return
+        user = self.store.auth.upsert_external_user(
+            provider="wechat",
+            provider_user_id=profile.get("openid") or token_payload["openid"],
+            union_id=profile.get("unionid") or token_payload.get("unionid", ""),
+            display_name=profile.get("nickname") or "微信用户",
+            profile=profile,
+        )
+        session_token = self.store.auth.create_session(user.id)
+        self._redirect(next_path, cookies=[_session_cookie(session_token)])
+
+    def _logout(self) -> None:
+        self.store.auth.delete_session(self._session_token())
+        self._redirect("/", cookies=[_expired_session_cookie()])
+
+    def _finish_manual_auth(self) -> None:
+        params = parse.parse_qs(self._read_form_body())
+        try:
+            user = self.store.auth.create_manual_wechat_user(
+                display_name=params.get("display_name", [""])[0],
+                app_id=params.get("app_id", [""])[0],
+                app_secret=params.get("app_secret", [""])[0],
+                access_token=params.get("access_token", [""])[0],
+            )
+            session_token = self.store.auth.create_session(user.id)
+            self._redirect("/app", cookies=[_session_cookie(session_token)])
+        except Exception as exc:
+            self._send_html(render_manual_auth_html(error=str(exc)), status=HTTPStatus.BAD_REQUEST)
+
+    def _save_wechat_settings(self) -> None:
+        user = self._require_user()
+        if user is None:
+            return
+        params = parse.parse_qs(self._read_form_body())
+        try:
+            self.store.auth.update_manual_wechat_account(
+                user_id=user["id"],
+                display_name=params.get("display_name", [""])[0],
+                app_id=params.get("app_id", [""])[0],
+                app_secret=params.get("app_secret", [""])[0],
+                access_token=params.get("access_token", [""])[0],
+            )
+            account = self.store.auth.manual_wechat_account_for_user(user["id"]) or {}
+            self._send_html(render_wechat_settings_html(account=account, message="已保存公众号参数。"))
+        except Exception as exc:
+            account = {
+                "display_name": params.get("display_name", [""])[0],
+                "app_id": params.get("app_id", [""])[0],
+                "access_token": params.get("access_token", [""])[0],
+            }
+            self._send_html(render_wechat_settings_html(account=account, error=str(exc)), status=HTTPStatus.BAD_REQUEST)
+
+    def _wechat_publish_config_for_user(self, user_id: int) -> AgentConfig:
+        config = AgentConfig.from_env_file()
+        account = self.store.auth.manual_wechat_account_for_user(user_id)
+        if not account:
+            return config
+        return replace(
+            config,
+            wechat_app_id=account.get("app_id", "") or config.wechat_app_id,
+            wechat_app_secret=account.get("app_secret", "") or config.wechat_app_secret,
+            wechat_access_token=account.get("access_token", "") or config.wechat_access_token,
+        )
+
+    def _send_file(self, query: str, user_id: int) -> None:
         params = parse.parse_qs(query)
         raw_path = params.get("path", [""])[0]
         path = Path(raw_path)
         if not _is_safe_served_file(path):
             self._send_json({"error": "file is not allowed"}, status=HTTPStatus.BAD_REQUEST)
+            return
+        if not self.store.user_owns_asset_path(user_id, path):
+            self._send_json({"error": "file not found"}, status=HTTPStatus.NOT_FOUND)
             return
         if not path.exists() or not path.is_file():
             self._send_json({"error": "file not found"}, status=HTTPStatus.NOT_FOUND)
@@ -713,6 +913,259 @@ def _is_safe_served_file(path: Path) -> bool:
     return resolved == output_root or output_root in resolved.parents
 
 
+def _session_cookie(token: str) -> str:
+    return f"{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={60 * 60 * 24 * 30}"
+
+
+def _expired_session_cookie() -> str:
+    return f"{SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
+
+
+def render_auth_setup_html() -> str:
+    return AUTH_SETUP_HTML
+
+
+def render_manual_auth_html(error: str = "") -> str:
+    error_html = f'<p class="error">{html_escape(error)}</p>' if error else ""
+    return MANUAL_AUTH_HTML.replace("{{ERROR}}", error_html)
+
+
+def render_wechat_settings_html(account: dict, message: str = "", error: str = "") -> str:
+    message_html = f'<p class="success">{html_escape(message)}</p>' if message else ""
+    error_html = f'<p class="error">{html_escape(error)}</p>' if error else ""
+    html = WECHAT_SETTINGS_HTML.replace("{{MESSAGE}}", message_html).replace("{{ERROR}}", error_html)
+    return (
+        html.replace("{{DISPLAY_NAME}}", html_escape(account.get("display_name", "")))
+        .replace("{{APP_ID}}", html_escape(account.get("app_id", "")))
+        .replace("{{ACCESS_TOKEN}}", html_escape(account.get("access_token", "")))
+    )
+
+
+def html_escape(value: str) -> str:
+    return (
+        str(value)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&#039;")
+    )
+
+
+LANDING_HTML = r"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Media Agent - 内容增长工作台</title>
+  <style>
+    :root {
+      --bg: #f6f7f2;
+      --ink: #14211d;
+      --muted: #60706a;
+      --line: #dce3dc;
+      --green: #0f8a5f;
+      --dark: #12261f;
+      --gold: #b9892d;
+      --panel: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--bg);
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      letter-spacing: 0;
+    }
+    header, main { width: min(1120px, calc(100% - 36px)); margin: 0 auto; }
+    header { height: 72px; display: flex; align-items: center; justify-content: space-between; }
+    .brand { font-weight: 900; font-size: 18px; }
+    nav { display: flex; gap: 16px; align-items: center; }
+    .login { color: var(--green); text-decoration: none; font-weight: 800; }
+    .hero { min-height: calc(100vh - 72px); display: grid; grid-template-columns: minmax(0, 1.04fr) minmax(340px, .96fr); gap: 36px; align-items: center; padding-bottom: 40px; }
+    h1 { margin: 0; font-size: clamp(40px, 6vw, 76px); line-height: 1.02; max-width: 820px; }
+    .lead { margin-top: 22px; color: var(--muted); font-size: 18px; line-height: 1.8; max-width: 640px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
+    .primary, .secondary {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-height: 48px; padding: 0 20px; border-radius: 8px; text-decoration: none; font-weight: 900;
+    }
+    .primary { background: var(--green); color: #fff; }
+    .secondary { border: 1px solid var(--line); color: var(--dark); background: #fff; }
+    .board { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px; box-shadow: 0 24px 70px rgba(20, 33, 29, .10); }
+    .row { display: grid; grid-template-columns: 90px 1fr 72px; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
+    .row:last-child { border-bottom: 0; }
+    .tag { color: var(--green); font-weight: 900; font-size: 12px; }
+    .topic { font-weight: 850; line-height: 1.45; }
+    .score { color: var(--gold); font-weight: 900; text-align: right; }
+    .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 0 auto 42px; }
+    .feature { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 18px; min-height: 130px; }
+    .feature h2 { font-size: 16px; margin: 0 0 10px; }
+    .feature p { margin: 0; color: var(--muted); line-height: 1.7; font-size: 14px; }
+    @media (max-width: 880px) {
+      .hero { grid-template-columns: 1fr; padding-top: 24px; }
+      .features { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">Media Agent</div>
+    <nav>
+      <a class="login" href="/auth/wechat/start?next=/app">微信授权登录</a>
+      <a class="login" href="/auth/manual">手动填写公众号参数</a>
+    </nav>
+  </header>
+  <main>
+    <section class="hero">
+      <div>
+        <h1>从爆款选题到公众号草稿箱</h1>
+        <p class="lead">输入关键词，自动筛选免费关键词数据源，生成内容、排版预览、封面和可追踪的发布记录。适合公众号、百家号、小红书内容团队逐步自动化。</p>
+        <div class="actions">
+          <a class="primary" href="/auth/wechat/start?next=/app">微信授权试用</a>
+          <a class="secondary" href="/auth/manual">手动填写公众号参数</a>
+        </div>
+      </div>
+      <div class="board" aria-label="内容生产示例">
+        <div class="row"><span class="tag">关键词</span><span class="topic">AI副业</span><span class="score">输入</span></div>
+        <div class="row"><span class="tag">选题</span><span class="topic">普通人做 AI 副业，先避开这 5 个坑</span><span class="score">A</span></div>
+        <div class="row"><span class="tag">资产</span><span class="topic">公众号 HTML、封面图、预览页</span><span class="score">保存</span></div>
+        <div class="row"><span class="tag">发布</span><span class="topic">确认后提交到草稿箱</span><span class="score">可追踪</span></div>
+      </div>
+    </section>
+    <section id="features" class="features">
+      <article class="feature"><h2>关键词选题</h2><p>只保留免费且支持关键词检索的数据源，降低内容与关键词不相关的问题。</p></article>
+      <article class="feature"><h2>内容资产库</h2><p>每次生成都会保存状态、预览、封面和提交记录，随时回来继续处理。</p></article>
+      <article class="feature"><h2>授权扩展</h2><p>先接微信授权登录，账号体系按多平台设计，后续可扩展其他平台。</p></article>
+    </section>
+  </main>
+</body>
+</html>"""
+
+
+MANUAL_AUTH_HTML = r"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>手动填写公众号参数 - Media Agent</title>
+  <style>
+    body { margin: 0; min-height: 100vh; background: #f6f7f2; color: #14211d; font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; letter-spacing: 0; }
+    main { width: min(720px, calc(100% - 36px)); margin: 42px auto; background: #fff; border: 1px solid #dce3dc; border-radius: 8px; padding: 28px; box-shadow: 0 24px 70px rgba(20, 33, 29, .10); }
+    h1 { margin: 0 0 10px; font-size: 26px; }
+    p { color: #60706a; line-height: 1.7; }
+    label { display: block; margin: 16px 0 6px; color: #60706a; font-size: 12px; font-weight: 800; }
+    input { width: 100%; height: 42px; border: 1px solid #dce3dc; border-radius: 8px; padding: 0 12px; font-size: 14px; }
+    input:focus { border-color: #0f8a5f; outline: none; box-shadow: 0 0 0 3px rgba(15, 138, 95, .12); }
+    button { width: 100%; height: 46px; margin-top: 22px; border: 0; border-radius: 8px; background: #0f8a5f; color: #fff; font-size: 15px; font-weight: 900; cursor: pointer; }
+    .hint { background: #f3f6f1; border-radius: 8px; padding: 12px; }
+    .error { color: #b23b3b; font-weight: 800; }
+    a { color: #0f8a5f; font-weight: 800; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>手动填写公众号参数</h1>
+    <p class="hint">你可以在微信公众平台查看开发者参数。适合暂时不接微信开放平台授权、先自己使用或小团队试用的场景。后续可在工作台里继续编辑修改。</p>
+    {{ERROR}}
+    <form method="post" action="/auth/manual">
+      <label for="display_name">账号名称</label>
+      <input id="display_name" name="display_name" placeholder="例如：班森的公众号">
+
+      <label for="app_id">WECHAT_APP_ID</label>
+      <input id="app_id" name="app_id" required placeholder="公众号 AppID">
+
+      <label for="app_secret">WECHAT_APP_SECRET</label>
+      <input id="app_secret" name="app_secret" type="password" required placeholder="公众号 AppSecret">
+
+      <label for="access_token">WECHAT_ACCESS_TOKEN 可选</label>
+      <input id="access_token" name="access_token" placeholder="已有 access_token 时可填写">
+
+      <button type="submit">保存并进入工作台</button>
+    </form>
+    <p><a href="/">返回首页</a></p>
+  </main>
+</body>
+</html>"""
+
+
+WECHAT_SETTINGS_HTML = r"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>公众号参数 - Media Agent</title>
+  <style>
+    body { margin: 0; min-height: 100vh; background: #f6f7f2; color: #14211d; font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; letter-spacing: 0; }
+    main { width: min(720px, calc(100% - 36px)); margin: 42px auto; background: #fff; border: 1px solid #dce3dc; border-radius: 8px; padding: 28px; box-shadow: 0 24px 70px rgba(20, 33, 29, .10); }
+    h1 { margin: 0 0 10px; font-size: 26px; }
+    p { color: #60706a; line-height: 1.7; }
+    label { display: block; margin: 16px 0 6px; color: #60706a; font-size: 12px; font-weight: 800; }
+    input { width: 100%; height: 42px; border: 1px solid #dce3dc; border-radius: 8px; padding: 0 12px; font-size: 14px; }
+    input:focus { border-color: #0f8a5f; outline: none; box-shadow: 0 0 0 3px rgba(15, 138, 95, .12); }
+    button { width: 100%; height: 46px; margin-top: 22px; border: 0; border-radius: 8px; background: #0f8a5f; color: #fff; font-size: 15px; font-weight: 900; cursor: pointer; }
+    .hint { background: #f3f6f1; border-radius: 8px; padding: 12px; }
+    .error { color: #b23b3b; font-weight: 800; }
+    .success { color: #0f8a5f; font-weight: 800; }
+    a { color: #0f8a5f; font-weight: 800; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>公众号参数</h1>
+    <p class="hint">参数可在微信公众平台查看。AppSecret 留空时会保留原值；填写新值会覆盖。</p>
+    {{MESSAGE}}
+    {{ERROR}}
+    <form method="post" action="/settings/wechat">
+      <label for="display_name">账号名称</label>
+      <input id="display_name" name="display_name" value="{{DISPLAY_NAME}}">
+
+      <label for="app_id">WECHAT_APP_ID</label>
+      <input id="app_id" name="app_id" value="{{APP_ID}}" required>
+
+      <label for="app_secret">WECHAT_APP_SECRET</label>
+      <input id="app_secret" name="app_secret" type="password" placeholder="留空则保留原 AppSecret">
+
+      <label for="access_token">WECHAT_ACCESS_TOKEN 可选</label>
+      <input id="access_token" name="access_token" value="{{ACCESS_TOKEN}}">
+
+      <button type="submit">保存修改</button>
+    </form>
+    <p><a href="/app">返回工作台</a></p>
+  </main>
+</body>
+</html>"""
+
+
+AUTH_SETUP_HTML = r"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>配置微信登录 - Media Agent</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f6f7f2; color: #14211d; font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    main { width: min(640px, calc(100% - 36px)); background: #fff; border: 1px solid #dce3dc; border-radius: 8px; padding: 28px; box-shadow: 0 24px 70px rgba(20, 33, 29, .10); }
+    h1 { margin: 0 0 12px; font-size: 24px; }
+    p { color: #60706a; line-height: 1.7; }
+    code { display: block; padding: 12px; margin: 10px 0; background: #f3f6f1; border-radius: 8px; color: #0f6044; overflow-wrap: anywhere; }
+    a { color: #0f8a5f; font-weight: 800; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>需要先配置微信授权登录</h1>
+    <p>请在服务器的 <code>.env.production</code> 中配置微信开放平台网站应用参数：</p>
+    <code>WECHAT_LOGIN_APP_ID=</code>
+    <code>WECHAT_LOGIN_APP_SECRET=</code>
+    <code>WECHAT_LOGIN_REDIRECT_URI=https://media-agent.createbeauty.top/auth/wechat/callback</code>
+    <p>配置完成并重新部署后，点击试用会跳转微信扫码授权登录。</p>
+    <p><a href="/">返回首页</a></p>
+  </main>
+</body>
+</html>"""
+
+
 INDEX_HTML = r"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -756,6 +1209,8 @@ INDEX_HTML = r"""<!doctype html>
     h2 { margin: 0 0 14px; font-size: 16px; }
     p { margin: 0; }
     .sub { color: var(--muted); font-size: 13px; line-height: 1.6; margin-bottom: 24px; }
+    .account-links { display: flex; flex-wrap: wrap; gap: 10px; margin: -12px 0 22px; }
+    .account-links a { color: var(--green-dark); font-size: 13px; font-weight: 800; text-decoration: none; }
     label { display: block; color: var(--muted); font-size: 12px; font-weight: 700; margin: 14px 0 6px; }
     input, select {
       width: 100%;
@@ -895,6 +1350,10 @@ INDEX_HTML = r"""<!doctype html>
     <aside>
       <h1>Content Agent 内容工作台</h1>
       <p class="sub">关键词到选题、内容、排版、封面和草稿箱的本地工作台。</p>
+      <div class="account-links">
+        <a href="/settings/wechat">公众号参数</a>
+        <a href="/auth/logout">退出登录</a>
+      </div>
       <form id="runForm">
         <label for="keyword">关键词</label>
         <input id="keyword" name="keyword" value="AI副业" autocomplete="off">

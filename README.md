@@ -138,11 +138,17 @@ python3 -m content_agent.web --host 127.0.0.1 --port 8000
 
 Open `http://127.0.0.1:8000`.
 
+The root page is a public product intro page. Clicking trial supports two entry modes:
+
+- WeChat open-platform login: configure `WECHAT_LOGIN_APP_ID`, `WECHAT_LOGIN_APP_SECRET`, and `WECHAT_LOGIN_REDIRECT_URI`, then users scan WeChat to authorize login.
+- Manual WeChat official-account parameters: users can fill the AppID/AppSecret/access token from WeChat Official Account Platform, enter the workbench, and later edit them from "公众号参数".
+
 The web workbench persists each generated run as a content record:
 
 - Starts a background job for each run and polls `/api/jobs/<job_id>` for progress.
 - Saves job status, progress events, generated result JSON, preview paths, cover paths, and WeChat publish attempts in the database.
 - Lists historical records from `/api/jobs`; selecting a record restores its preview and allows submitting it to the WeChat draft box later.
+- Filters historical records by the current logged-in user.
 - Reuses the same collectors, LLM generation, gzh-design formatting, Replicate cover generation, and WeChat draft submission functions as the CLI.
 - Serves generated preview HTML and cover files from `output/` for local inspection.
 

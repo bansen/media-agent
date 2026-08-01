@@ -4,7 +4,15 @@ from pathlib import Path
 from unittest.mock import patch
 
 from content_agent.models import CandidateContent
-from content_agent.web import WebJob, WebRunOptions, render_index_html, run_agent_workflow, submit_previewed_wechat_draft
+from content_agent.web import (
+    SESSION_COOKIE,
+    WebJob,
+    WebRunOptions,
+    render_index_html,
+    render_landing_html,
+    run_agent_workflow,
+    submit_previewed_wechat_draft,
+)
 
 
 class WebTests(unittest.TestCase):
@@ -21,7 +29,22 @@ class WebTests(unittest.TestCase):
         self.assertIn('id="historyList"', html)
         self.assertIn("历史记录", html)
         self.assertIn("loadHistory", html)
+        self.assertIn('href="/settings/wechat"', html)
+        self.assertIn("公众号参数", html)
         self.assertNotIn('id="submitWechatDraft"', html)
+
+    def test_landing_html_introduces_product_and_links_to_wechat_trial(self):
+        html = render_landing_html()
+
+        self.assertIn("Media Agent", html)
+        self.assertIn("从爆款选题到公众号草稿箱", html)
+        self.assertIn('href="/auth/wechat/start?next=/app"', html)
+        self.assertIn('href="/auth/manual"', html)
+        self.assertIn("手动填写公众号参数", html)
+        self.assertNotIn('id="runForm"', html)
+
+    def test_session_cookie_name_is_stable(self):
+        self.assertEqual(SESSION_COOKIE, "media_agent_session")
 
     def test_index_html_keeps_long_names_readable(self):
         html = render_index_html()

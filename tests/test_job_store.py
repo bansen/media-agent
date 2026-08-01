@@ -69,6 +69,26 @@ class JobStorePersistenceTests(unittest.TestCase):
         self.assertEqual(loaded.publish_attempts[0]["platform"], "wechat")
         self.assertEqual(loaded.publish_attempts[0]["response"]["media_id"], "DRAFT_ID")
 
+    def test_job_store_checks_asset_path_ownership(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            database_url = f"sqlite:///{Path(tmpdir) / 'content-agent.db'}"
+            store = JobStore(database_url=database_url, auto_start=False)
+            job = store.create(WebRunOptions(keyword="AI副业", channel="wechat", collector="mock"), user_id=1)
+            store._update(
+                job.id,
+                status="preview_ready",
+                result={
+                    "keyword": "AI副业",
+                    "gzh_formatting": {
+                        "clean_html": "output/owned.html",
+                        "preview_html": "output/owned-preview.html",
+                    },
+                },
+            )
+
+            self.assertTrue(store.user_owns_asset_path(1, Path("output/owned-preview.html")))
+            self.assertFalse(store.user_owns_asset_path(2, Path("output/owned-preview.html")))
+
 
 if __name__ == "__main__":
     unittest.main()

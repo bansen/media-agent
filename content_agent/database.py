@@ -38,6 +38,54 @@ class WeChatAccountRow(Base):
     updated_at: Mapped[float] = mapped_column(Float)
 
 
+class PlatformAccountRow(Base):
+    __tablename__ = "platform_accounts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    platform: Mapped[str] = mapped_column(String(40))
+    auth_type: Mapped[str] = mapped_column(String(40))
+    display_name: Mapped[str] = mapped_column(String(200), default="")
+    credentials_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    profile_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[float] = mapped_column(Float)
+    updated_at: Mapped[float] = mapped_column(Float)
+
+
+class ExternalAuthAccountRow(Base):
+    __tablename__ = "external_auth_accounts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    provider: Mapped[str] = mapped_column(String(40))
+    provider_user_id: Mapped[str] = mapped_column(String(200))
+    union_id: Mapped[str] = mapped_column(String(200), default="")
+    display_name: Mapped[str] = mapped_column(String(200), default="")
+    profile_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[float] = mapped_column(Float)
+    updated_at: Mapped[float] = mapped_column(Float)
+
+
+class UserSessionRow(Base):
+    __tablename__ = "user_sessions"
+
+    token: Mapped[str] = mapped_column(String(96), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[float] = mapped_column(Float)
+    expires_at: Mapped[float] = mapped_column(Float)
+
+
+class OAuthStateRow(Base):
+    __tablename__ = "oauth_states"
+
+    state: Mapped[str] = mapped_column(String(96), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(40))
+    next_path: Mapped[str] = mapped_column(Text, default="/app")
+    created_at: Mapped[float] = mapped_column(Float)
+    expires_at: Mapped[float] = mapped_column(Float)
+    consumed_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
 class ContentJobRow(Base):
     __tablename__ = "content_jobs"
 
