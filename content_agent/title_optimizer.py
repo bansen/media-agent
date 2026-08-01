@@ -18,10 +18,12 @@ FORBIDDEN_TITLE_TERMS = [
 ]
 
 
-def optimize_title(title: str, channel: ContentChannel) -> str:
+def optimize_title(title: str, channel: ContentChannel, keyword: str = "") -> str:
     clean_title = clean_source_title(title)
     if channel == "xiaohongshu" or _looks_like_health(clean_title):
         return _sanitize_title(_optimize_health_title(clean_title))
+    if keyword.strip() and not _looks_like_ai_focus(keyword):
+        return _sanitize_title(_optimize_keyword_title(clean_title, keyword.strip()))
     return _sanitize_title(_optimize_ai_side_hustle_title(clean_title))
 
 
@@ -42,6 +44,16 @@ def _optimize_ai_side_hustle_title(title: str) -> str:
     if 10 <= len(title) <= 28 and not _contains_any(title, FORBIDDEN_TITLE_TERMS):
         return title
     return "普通人学习 AI，先从一个能交付的小场景开始"
+
+
+def _optimize_keyword_title(title: str, keyword: str) -> str:
+    if keyword in title and 10 <= len(title) <= 30 and not _contains_any(title, FORBIDDEN_TITLE_TERMS):
+        return title
+    if _contains_any(title, ["架构", "系统", "平台", "工程", "数据", "项目", "技术"]):
+        return f"{keyword}入门：先看懂这 3 个核心问题"
+    if _contains_any(title, ["发布", "更新", "趋势", "报告", "方案"]):
+        return f"{keyword}有新变化，普通人先看懂这 3 点"
+    return f"{keyword}怎么入门？先从这 3 个真实场景开始"
 
 
 def _optimize_health_title(title: str) -> str:
@@ -74,6 +86,24 @@ def _sanitize_title(title: str) -> str:
 
 def _looks_like_health(title: str) -> bool:
     return _contains_any(title, ["养生", "女性", "宝妈", "健康", "久坐", "气色", "睡前", "办公室"])
+
+
+def _looks_like_ai_focus(text: str) -> bool:
+    return _contains_any(
+        text,
+        [
+            "AI",
+            "ai",
+            "DeepSeek",
+            "deepseek",
+            "大模型",
+            "副业",
+            "赚钱",
+            "变现",
+            "轻创业",
+            "接单",
+        ],
+    )
 
 
 def _contains_any(text: str, terms: list[str]) -> bool:

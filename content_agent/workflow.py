@@ -22,8 +22,8 @@ def run_keyword_workflow(
 
     expanded_keywords = expand_keywords(keyword, channel=primary_channel)
     topics = sorted(
-        (_brief_for(candidate, primary_channel=primary_channel) for candidate in candidates),
-        key=lambda item: item.score.total,
+        (_brief_for(candidate, keyword=keyword, primary_channel=primary_channel) for candidate in candidates),
+        key=lambda item: item.score.total + _keyword_relevance_boost(keyword, item.title),
         reverse=True,
     )
     selected = topics[0]
@@ -38,10 +38,10 @@ def run_keyword_workflow(
     )
 
 
-def _brief_for(candidate: CandidateContent, primary_channel: ContentChannel = "wechat") -> TopicBrief:
+def _brief_for(candidate: CandidateContent, keyword: str, primary_channel: ContentChannel = "wechat") -> TopicBrief:
     score = score_candidate(candidate)
     is_health = _is_health_topic(candidate.title, primary_channel)
-    optimized_title = optimize_title(candidate.title, primary_channel)
+    optimized_title = optimize_title(candidate.title, primary_channel, keyword=keyword)
     platform_fit: list[ContentChannel] = ["xiaohongshu"] if is_health else ["wechat"]
     if not is_health and score.total >= 75:
         platform_fit.append("xiaohongshu")
@@ -93,3 +93,24 @@ def _is_health_topic(title: str, primary_channel: ContentChannel) -> bool:
         "习惯",
     ]
     return any(term in title for term in health_terms)
+
+
+def _keyword_relevance_boost(keyword: str, title: str) -> float:
+    cleaned_keyword = keyword.strip().lower()
+    cleaned_title = title.strip().lower()
+    if not cleaned_keyword:
+        return 0
+    if cleaned_keyword in cleaned_title:
+        return 35
+
+    terms = [term for term in _keyword_terms(cleaned_keyword) if term in cleaned_title]
+    return min(24, len(terms) * 8)
+
+
+def _keyword_terms(keyword: str) -> list[str]:
+    parts = [part for part in keyword.replace("/", " ").replace("-", " ").split() if len(part) >= 2]
+    if parts:
+        return parts
+    if len(keyword) <= 2:
+        return [keyword]
+    return [keyword[index : index + 2] for index in range(0, len(keyword) - 1)]

@@ -56,6 +56,40 @@ class TitleOptimizerTests(unittest.TestCase):
         self.assertNotIn("治疗", optimized_title)
         self.assertNotIn("诊断", optimized_title)
 
+    def test_wechat_non_ai_keyword_keeps_keyword_context(self):
+        candidates = [
+            CandidateContent(
+                title="GitHub 项目：fighting41love/funNLP",
+                source="github",
+                url="https://example.com/funnlp",
+                heat=92,
+                interaction=88,
+                hook=74,
+                pain=65,
+                reuse=84,
+                material=80,
+            ),
+            CandidateContent(
+                title="[云框架]SMACK大数据架构 / [Cloudframeworks]SMACK big data architecture",
+                source="hn_algolia",
+                url="https://example.com/big-data",
+                heat=70,
+                interaction=68,
+                hook=72,
+                pain=76,
+                reuse=80,
+                material=78,
+            ),
+        ]
+
+        result = run_keyword_workflow("大数据架构", candidates=candidates, primary_channel="wechat")
+        optimized_title = result.topics[0].optimized_title
+
+        self.assertEqual(result.topics[0].title, "[云框架]SMACK大数据架构 / [Cloudframeworks]SMACK big data architecture")
+        self.assertIn("大数据架构", optimized_title)
+        self.assertNotIn("普通人学 AI", optimized_title)
+        self.assertIn(f"公众号文章：《{optimized_title}》", result.wechat_outline)
+
 
 if __name__ == "__main__":
     unittest.main()
