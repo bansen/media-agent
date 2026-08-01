@@ -10,6 +10,7 @@ from content_agent.web import (
     WebRunOptions,
     render_index_html,
     render_landing_html,
+    render_trial_html,
     run_agent_workflow,
     submit_previewed_wechat_draft,
 )
@@ -33,15 +34,30 @@ class WebTests(unittest.TestCase):
         self.assertIn("公众号参数", html)
         self.assertNotIn('id="submitWechatDraft"', html)
 
-    def test_landing_html_introduces_product_and_links_to_wechat_trial(self):
+    def test_landing_html_introduces_product_with_platform_neutral_ctas(self):
         html = render_landing_html()
 
         self.assertIn("Media Agent", html)
-        self.assertIn("从爆款选题到公众号草稿箱", html)
+        self.assertIn("把自媒体创作从想法推进到可发布", html)
+        self.assertIn("自动筛选爆款数据", html)
+        self.assertIn("公众号", html)
+        self.assertIn("小红书", html)
+        self.assertIn("百家号", html)
+        self.assertIn('href="/trial"', html)
+        self.assertNotIn("微信授权试用", html)
+        self.assertNotIn("手动填写公众号参数", html)
+        self.assertNotIn('id="runForm"', html)
+
+    def test_trial_html_lists_available_and_coming_platforms(self):
+        html = render_trial_html()
+
+        self.assertIn("选择要试用的平台", html)
+        self.assertIn("微信公众号", html)
         self.assertIn('href="/auth/wechat/start?next=/app"', html)
         self.assertIn('href="/auth/manual"', html)
-        self.assertIn("手动填写公众号参数", html)
-        self.assertNotIn('id="runForm"', html)
+        self.assertIn("百家号", html)
+        self.assertIn("小红书", html)
+        self.assertIn("敬请期待", html)
 
     def test_session_cookie_name_is_stable(self):
         self.assertEqual(SESSION_COOKIE, "media_agent_session")

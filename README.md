@@ -138,10 +138,11 @@ python3 -m content_agent.web --host 127.0.0.1 --port 8000
 
 Open `http://127.0.0.1:8000`.
 
-The root page is a public product intro page. Clicking trial supports two entry modes:
+The root page is a public product intro page with platform-neutral trial CTAs. It can mention supported platform categories, but clickable trial text should route to `/trial`, where users choose an available platform:
 
-- WeChat open-platform login: configure `WECHAT_LOGIN_APP_ID`, `WECHAT_LOGIN_APP_SECRET`, and `WECHAT_LOGIN_REDIRECT_URI`, then users scan WeChat to authorize login.
-- Manual WeChat official-account parameters: users can fill the AppID/AppSecret/access token from WeChat Official Account Platform, enter the workbench, and later edit them from "公众号参数".
+- WeChat official account is currently open.
+- Baijiahao and Xiaohongshu are shown as coming soon.
+- For WeChat, users can use open-platform login or manually fill AppID/AppSecret/access token from WeChat Official Account Platform, enter the workbench, and later edit them from "公众号参数".
 
 The web workbench persists each generated run as a content record:
 

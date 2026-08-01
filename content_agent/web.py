@@ -490,6 +490,10 @@ def render_landing_html() -> str:
     return LANDING_HTML
 
 
+def render_trial_html() -> str:
+    return TRIAL_HTML
+
+
 class ContentAgentHandler(BaseHTTPRequestHandler):
     store = JobStore()
 
@@ -503,6 +507,9 @@ class ContentAgentHandler(BaseHTTPRequestHandler):
             if user is None:
                 return
             self._send_html(render_index_html())
+            return
+        if parsed.path == "/trial":
+            self._send_html(render_trial_html())
             return
         if parsed.path == "/auth/wechat/start":
             self._start_wechat_auth(parsed.query)
@@ -1012,31 +1019,101 @@ LANDING_HTML = r"""<!doctype html>
   <header>
     <div class="brand">Media Agent</div>
     <nav>
-      <a class="login" href="/auth/wechat/start?next=/app">微信授权登录</a>
-      <a class="login" href="/auth/manual">手动填写公众号参数</a>
+      <a class="login" href="/trial">开始试用</a>
     </nav>
   </header>
   <main>
     <section class="hero">
       <div>
-        <h1>从爆款选题到公众号草稿箱</h1>
-        <p class="lead">输入关键词，自动筛选免费关键词数据源，生成内容、排版预览、封面和可追踪的发布记录。适合公众号、百家号、小红书内容团队逐步自动化。</p>
+        <h1>把自媒体创作从想法推进到可发布</h1>
+        <p class="lead">很多人想做公众号、小红书、百家号等自媒体，却被选题、素材、内容、封面、排版和发布流程反复卡住。Media Agent 把这些环节放进一个可追踪的工作台，让每次创作都有进度、有预览、有记录。</p>
         <div class="actions">
-          <a class="primary" href="/auth/wechat/start?next=/app">微信授权试用</a>
-          <a class="secondary" href="/auth/manual">手动填写公众号参数</a>
+          <a class="primary" href="/trial">开始试用</a>
+          <a class="secondary" href="#features">查看能力</a>
         </div>
       </div>
       <div class="board" aria-label="内容生产示例">
         <div class="row"><span class="tag">关键词</span><span class="topic">AI副业</span><span class="score">输入</span></div>
-        <div class="row"><span class="tag">选题</span><span class="topic">普通人做 AI 副业，先避开这 5 个坑</span><span class="score">A</span></div>
-        <div class="row"><span class="tag">资产</span><span class="topic">公众号 HTML、封面图、预览页</span><span class="score">保存</span></div>
-        <div class="row"><span class="tag">发布</span><span class="topic">确认后提交到草稿箱</span><span class="score">可追踪</span></div>
+        <div class="row"><span class="tag">数据</span><span class="topic">自动筛选爆款数据</span><span class="score">发现</span></div>
+        <div class="row"><span class="tag">内容</span><span class="topic">生成可编辑内容、封面与预览</span><span class="score">成稿</span></div>
+        <div class="row"><span class="tag">推进</span><span class="topic">保存每次状态，随时回来继续</span><span class="score">可追踪</span></div>
       </div>
     </section>
     <section id="features" class="features">
-      <article class="feature"><h2>关键词选题</h2><p>只保留免费且支持关键词检索的数据源，降低内容与关键词不相关的问题。</p></article>
+      <article class="feature"><h2>爆款数据筛选</h2><p>输入关键词后，自动筛选爆款数据，减少从空白页开始找方向的时间。</p></article>
+      <article class="feature"><h2>创作流程推进</h2><p>把素材、内容、封面、排版和预览串起来，让卡住的环节一个个往前走。</p></article>
       <article class="feature"><h2>内容资产库</h2><p>每次生成都会保存状态、预览、封面和提交记录，随时回来继续处理。</p></article>
-      <article class="feature"><h2>授权扩展</h2><p>先接微信授权登录，账号体系按多平台设计，后续可扩展其他平台。</p></article>
+    </section>
+  </main>
+</body>
+</html>"""
+
+
+TRIAL_HTML = r"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>选择试用平台 - Media Agent</title>
+  <style>
+    :root {
+      --bg: #f6f7f2;
+      --ink: #14211d;
+      --muted: #60706a;
+      --line: #dce3dc;
+      --green: #0f8a5f;
+      --panel: #ffffff;
+      --disabled: #a5ada8;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; letter-spacing: 0; }
+    main { width: min(980px, calc(100% - 36px)); margin: 48px auto; }
+    a { color: var(--green); font-weight: 800; text-decoration: none; }
+    h1 { margin: 18px 0 10px; font-size: clamp(32px, 5vw, 56px); line-height: 1.05; }
+    .lead { color: var(--muted); line-height: 1.8; font-size: 16px; max-width: 680px; }
+    .platforms { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 30px; }
+    .platform { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px; min-height: 210px; box-shadow: 0 20px 60px rgba(20, 33, 29, .08); display: flex; flex-direction: column; }
+    .platform.disabled { color: var(--disabled); background: #f9faf7; }
+    .status { display: inline-flex; width: fit-content; min-height: 26px; align-items: center; padding: 0 10px; border-radius: 999px; background: #e9f3ed; color: #0a6547; font-size: 12px; font-weight: 900; }
+    .disabled .status { background: #eef0ed; color: #7e8782; }
+    h2 { margin: 14px 0 8px; font-size: 20px; }
+    p { margin: 0; color: var(--muted); line-height: 1.7; font-size: 14px; }
+    .platform.disabled p { color: #8d9691; }
+    .actions { display: grid; gap: 10px; margin-top: auto; padding-top: 18px; }
+    .button { min-height: 42px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; font-weight: 900; }
+    .primary { background: var(--green); color: white; }
+    .secondary { border: 1px solid var(--line); background: #fff; color: var(--ink); }
+    .soon { min-height: 42px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; border: 1px solid var(--line); color: #7e8782; font-weight: 900; background: #fff; }
+    @media (max-width: 820px) { .platforms { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <a href="/">返回首页</a>
+    <h1>选择要试用的平台</h1>
+    <p class="lead">不同平台会逐步开放。已开放的平台可以继续登录或填写参数；未开放的平台暂不可选。</p>
+    <section class="platforms">
+      <article class="platform">
+        <span class="status">已开放</span>
+        <h2>微信公众号</h2>
+        <p>适合先跑通选题、内容、排版、封面和草稿箱提交流程。</p>
+        <div class="actions">
+          <a class="button primary" href="/auth/wechat/start?next=/app">授权登录</a>
+          <a class="button secondary" href="/auth/manual">手动填写参数</a>
+        </div>
+      </article>
+      <article class="platform disabled" aria-disabled="true">
+        <span class="status">敬请期待</span>
+        <h2>百家号</h2>
+        <p>后续开放内容生成、预览和发布流程。</p>
+        <div class="actions"><span class="soon">暂不可选</span></div>
+      </article>
+      <article class="platform disabled" aria-disabled="true">
+        <span class="status">敬请期待</span>
+        <h2>小红书</h2>
+        <p>后续开放笔记生成、封面和半自动发布包。</p>
+        <div class="actions"><span class="soon">暂不可选</span></div>
+      </article>
     </section>
   </main>
 </body>
