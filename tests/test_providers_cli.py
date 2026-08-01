@@ -2,6 +2,7 @@ import io
 import json
 import tempfile
 import unittest
+from urllib.error import HTTPError
 from dataclasses import dataclass
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -34,6 +35,36 @@ class ProviderCliTests(unittest.TestCase):
         self.assertEqual(payload["model"], "deepseek-chat")
         self.assertEqual(payload["messages"][0]["role"], "user")
         self.assertEqual(payload["messages"][0]["content"], "生成 3 个选题")
+
+    def test_openai_compatible_provider_requires_llm_api_key(self):
+        provider = OpenAICompatibleLLMProvider(
+            api_key="",
+            base_url="https://api.deepseek.com",
+            model="deepseek-chat",
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "LLM_API_KEY"):
+            provider.generate("生成 3 个选题")
+
+    def test_openai_compatible_provider_reports_unauthorized_as_config_error(self):
+        provider = OpenAICompatibleLLMProvider(
+            api_key="wrong-secret",
+            base_url="https://api.deepseek.com",
+            model="deepseek-chat",
+        )
+
+        with patch(
+            "content_agent.providers.llm.request.urlopen",
+            side_effect=HTTPError(
+                url="https://api.deepseek.com/chat/completions",
+                code=401,
+                msg="Unauthorized",
+                hdrs=None,
+                fp=io.BytesIO(b'{"error":{"message":"invalid api key"}}'),
+            ),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "LLM_API_KEY"):
+                provider.generate("生成 3 个选题")
 
     def test_replicate_provider_builds_prediction_payload(self):
         provider = ReplicateImageProvider(api_token="secret", model_version="model-version")
