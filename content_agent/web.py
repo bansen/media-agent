@@ -13,9 +13,20 @@ from typing import Callable, Literal
 from urllib import parse
 from uuid import uuid4
 
+from sqlalchemy import select
+
 from .collectors.free_hot import collect_free_hot_candidates
 from .config import AgentConfig
 from .cover_generation import generate_cover_image
+from .database import (
+    ContentAssetRow,
+    ContentJobRow,
+    JobEventRow,
+    PublishAttemptRow,
+    build_engine,
+    init_schema,
+    session_factory,
+)
 from .formatters.wechat_gzh import format_wechat_markdown, write_gzh_outputs
 from .generation import generate_llm_drafts
 from .mock_data import get_mock_candidates
@@ -26,7 +37,7 @@ from .workflow import run_keyword_workflow
 
 CollectorName = Literal["mock", "free_hot"]
 ChannelName = Literal["wechat", "xiaohongshu"]
-JobStatus = Literal["queued", "running", "completed", "failed"]
+JobStatus = Literal["queued", "running", "completed", "preview_ready", "publishing", "published_draft", "failed", "archived"]
 
 
 @dataclass(frozen=True)
@@ -51,6 +62,7 @@ class WebJob:
     events: list[str] = field(default_factory=list)
     result: dict | None = None
     error: str = ""
+    publish_attempts: list[dict] = field(default_factory=list)
     created_at: float = field(default_factory=time)
     updated_at: float = field(default_factory=time)
 
@@ -61,27 +73,47 @@ class WebJob:
             "events": list(self.events),
             "result": self.result,
             "error": self.error,
+            "options": _options_to_json(self.options),
+            "publish_attempts": list(self.publish_attempts),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
 
 
 class JobStore:
-    def __init__(self):
+    def __init__(self, database_url: str | None = None, auto_start: bool = True):
         self._jobs: dict[str, WebJob] = {}
         self._lock = threading.Lock()
+        self._auto_start = auto_start
+        self._engine = build_engine(database_url)
+        init_schema(self._engine)
+        self._session_factory = session_factory(self._engine)
 
     def create(self, options: WebRunOptions) -> WebJob:
         job = WebJob(id=uuid4().hex[:12], options=options)
         with self._lock:
             self._jobs[job.id] = job
-        thread = threading.Thread(target=self._run_job, args=(job.id,), daemon=True)
-        thread.start()
+        self._persist_job(job)
+        if self._auto_start:
+            thread = threading.Thread(target=self._run_job, args=(job.id,), daemon=True)
+            thread.start()
         return job
 
     def get(self, job_id: str) -> WebJob | None:
         with self._lock:
-            return self._jobs.get(job_id)
+            job = self._jobs.get(job_id)
+        if job:
+            return job
+        with self._session_factory() as session:
+            row = session.get(ContentJobRow, job_id)
+            if row is None:
+                return None
+            return _job_from_row(row)
+
+    def list(self, limit: int = 50) -> list[WebJob]:
+        with self._session_factory() as session:
+            rows = session.scalars(select(ContentJobRow).order_by(ContentJobRow.created_at.desc()).limit(limit)).all()
+            return [_job_from_row(row) for row in rows]
 
     def _run_job(self, job_id: str) -> None:
         job = self.get(job_id)
@@ -90,7 +122,7 @@ class JobStore:
         self._update(job_id, status="running", event="Job started")
         try:
             result = run_agent_workflow(job.options, progress=lambda message: self._update(job_id, event=message))
-            self._update(job_id, status="completed", result=result, event="Job completed")
+            self._update(job_id, status=_status_for_result(result), result=result, event="Job completed")
         except Exception as exc:
             self._update(job_id, status="failed", error=str(exc), event=f"Job failed: {exc}")
 
@@ -103,7 +135,14 @@ class JobStore:
         error: str | None = None,
     ) -> None:
         with self._lock:
-            job = self._jobs[job_id]
+            job = self._jobs.get(job_id)
+        if job is None:
+            job = self.get(job_id)
+            if job is None:
+                raise KeyError(job_id)
+            with self._lock:
+                self._jobs[job_id] = job
+        with self._lock:
             if status:
                 job.status = status
             if event:
@@ -113,6 +152,199 @@ class JobStore:
             if error is not None:
                 job.error = error
             job.updated_at = time()
+        self._persist_job(job, event=event)
+
+    def record_publish_attempt(
+        self,
+        job_id: str,
+        platform: str,
+        status: JobStatus,
+        response: dict | None = None,
+        error: str = "",
+    ) -> None:
+        now = time()
+        attempt = {
+            "platform": platform,
+            "status": status,
+            "response": response or {},
+            "error": error,
+            "created_at": now,
+            "updated_at": now,
+        }
+        with self._lock:
+            job = self._jobs.get(job_id)
+        if job is None:
+            job = self.get(job_id)
+            if job is None:
+                raise KeyError(job_id)
+        with self._lock:
+            job.status = status
+            job.error = error
+            job.publish_attempts.append(attempt)
+            job.updated_at = now
+            self._jobs[job_id] = job
+        with self._session_factory() as session:
+            row = session.get(ContentJobRow, job_id)
+            if row is None:
+                raise KeyError(job_id)
+            row.status = status
+            row.error = error
+            row.updated_at = now
+            row.publish_attempts.append(
+                PublishAttemptRow(
+                    job_id=job_id,
+                    platform=platform,
+                    status=status,
+                    response_json=response or {},
+                    error=error,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            session.commit()
+
+    def _persist_job(self, job: WebJob, event: str | None = None) -> None:
+        with self._session_factory() as session:
+            row = session.get(ContentJobRow, job.id)
+            if row is None:
+                row = ContentJobRow(
+                    id=job.id,
+                    keyword=job.options.keyword,
+                    channel=job.options.channel,
+                    collector=job.options.collector,
+                    created_at=job.created_at,
+                    updated_at=job.updated_at,
+                )
+                session.add(row)
+            row.keyword = job.options.keyword
+            row.channel = job.options.channel
+            row.collector = job.options.collector
+            row.status = job.status
+            row.options_json = _options_to_json(job.options)
+            row.result_json = job.result
+            row.error = job.error
+            row.updated_at = job.updated_at
+            if event:
+                row.events.append(JobEventRow(job_id=job.id, message=event, created_at=job.updated_at))
+            if job.result is not None:
+                row.assets.clear()
+                row.assets.extend(_asset_rows_from_result(job.id, job.result, created_at=job.updated_at))
+            session.commit()
+
+
+def _options_to_json(options: WebRunOptions) -> dict:
+    return {
+        "keyword": options.keyword,
+        "channel": options.channel,
+        "collector": options.collector,
+        "use_llm": options.use_llm,
+        "format_gzh": options.format_gzh,
+        "generate_cover": options.generate_cover,
+        "submit_wechat_draft": options.submit_wechat_draft,
+        "wechat_content_html": options.wechat_content_html,
+        "wechat_cover_image": options.wechat_cover_image,
+        "output_dir": str(options.output_dir),
+    }
+
+
+def _options_from_json(payload: dict | None) -> WebRunOptions:
+    payload = payload or {}
+    return WebRunOptions(
+        keyword=str(payload.get("keyword", "")),
+        channel=payload.get("channel", "wechat"),
+        collector=payload.get("collector", "free_hot"),
+        use_llm=bool(payload.get("use_llm", False)),
+        format_gzh=bool(payload.get("format_gzh", True)),
+        generate_cover=bool(payload.get("generate_cover", False)),
+        submit_wechat_draft=bool(payload.get("submit_wechat_draft", False)),
+        wechat_content_html=str(payload.get("wechat_content_html", "")),
+        wechat_cover_image=str(payload.get("wechat_cover_image", "")),
+        output_dir=Path(str(payload.get("output_dir", "output"))),
+    )
+
+
+def _job_from_row(row: ContentJobRow) -> WebJob:
+    return WebJob(
+        id=row.id,
+        options=_options_from_json(row.options_json),
+        status=row.status,
+        events=[event.message for event in row.events],
+        result=row.result_json,
+        error=row.error,
+        publish_attempts=[
+            {
+                "platform": attempt.platform,
+                "status": attempt.status,
+                "response": attempt.response_json,
+                "error": attempt.error,
+                "created_at": attempt.created_at,
+                "updated_at": attempt.updated_at,
+            }
+            for attempt in row.publish_attempts
+        ],
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def _asset_rows_from_result(job_id: str, result: dict, created_at: float) -> list[ContentAssetRow]:
+    rows: list[ContentAssetRow] = []
+    formatting = result.get("gzh_formatting") or {}
+    if formatting.get("clean_html"):
+        rows.append(
+            ContentAssetRow(
+                job_id=job_id,
+                kind="wechat_clean_html",
+                path=str(formatting["clean_html"]),
+                mime_type="text/html",
+                metadata_json={"theme": formatting.get("theme", "")},
+                created_at=created_at,
+            )
+        )
+    if formatting.get("preview_html"):
+        rows.append(
+            ContentAssetRow(
+                job_id=job_id,
+                kind="wechat_preview_html",
+                path=str(formatting["preview_html"]),
+                mime_type="text/html",
+                metadata_json={"theme": formatting.get("theme", "")},
+                created_at=created_at,
+            )
+        )
+    cover = result.get("cover_image") or {}
+    if cover.get("path"):
+        rows.append(
+            ContentAssetRow(
+                job_id=job_id,
+                kind="cover_image",
+                path=str(cover["path"]),
+                url=str(cover.get("url", "")),
+                mime_type="image/jpeg",
+                metadata_json={"model": cover.get("model", ""), "prompt": cover.get("prompt", "")},
+                created_at=created_at,
+            )
+        )
+    if result.get("wechat_content_html"):
+        rows.append(
+            ContentAssetRow(
+                job_id=job_id,
+                kind="wechat_content_html",
+                path=str(result["wechat_content_html"]),
+                mime_type="text/html",
+                metadata_json={},
+                created_at=created_at,
+            )
+        )
+    return rows
+
+
+def _status_for_result(result: dict) -> JobStatus:
+    if result.get("wechat_draft"):
+        return "published_draft"
+    if result.get("gzh_formatting") or result.get("cover_image"):
+        return "preview_ready"
+    return "completed"
 
 
 def run_agent_workflow(options: WebRunOptions, progress: Callable[[str], None] | None = None) -> dict:
@@ -197,7 +429,7 @@ def run_agent_workflow(options: WebRunOptions, progress: Callable[[str], None] |
 
 
 def submit_previewed_wechat_draft(job: WebJob, progress: Callable[[str], None] | None = None) -> dict:
-    if job.status != "completed" or not job.result:
+    if job.status in {"queued", "running", "publishing"} or not job.result:
         raise ValueError("completed preview is required before submitting")
 
     result_payload = dict(job.result)
@@ -246,6 +478,9 @@ class ContentAgentHandler(BaseHTTPRequestHandler):
                 }
             )
             return
+        if parsed.path == "/api/jobs":
+            self._send_json({"jobs": [job.to_dict() for job in self.store.list()]})
+            return
         if parsed.path.startswith("/api/jobs/"):
             job_id = parsed.path.rsplit("/", 1)[-1]
             job = self.store.get(job_id)
@@ -268,14 +503,29 @@ class ContentAgentHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "job not found"}, status=HTTPStatus.NOT_FOUND)
                 return
             try:
+                self.store._update(job_id, status="publishing", event="WeChat draft submission started")
                 result = submit_previewed_wechat_draft(
                     job,
                     progress=lambda message: self.store._update(job_id, event=message),
                 )
-                self.store._update(job_id, status="completed", result=result, event="WeChat draft submission completed")
+                self.store._update(job_id, status="published_draft", result=result, event="WeChat draft submission completed")
+                self.store.record_publish_attempt(
+                    job_id,
+                    platform="wechat",
+                    status="published_draft",
+                    response=result.get("wechat_draft", {}).get("response", {}),
+                    error="",
+                )
                 self._send_json(self.store.get(job_id).to_dict())
             except Exception as exc:
                 self.store._update(job_id, status="failed", error=str(exc), event=f"WeChat draft submission failed: {exc}")
+                self.store.record_publish_attempt(
+                    job_id,
+                    platform="wechat",
+                    status="failed",
+                    response={},
+                    error=str(exc),
+                )
                 self._send_json({"error": str(exc), "job": self.store.get(job_id).to_dict()}, status=HTTPStatus.BAD_REQUEST)
             return
         if parsed.path != "/api/jobs":
@@ -600,6 +850,39 @@ INDEX_HTML = r"""<!doctype html>
     .empty { color: var(--muted); font-size: 13px; line-height: 1.6; }
     .error { color: var(--red); font-weight: 700; }
     .path { word-break: break-all; color: var(--blue); font-size: 12px; margin-top: 8px; }
+    .history-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 24px 0 10px;
+    }
+    .history-head h2 { margin: 0; }
+    .mini-button {
+      width: auto;
+      height: 30px;
+      margin: 0;
+      padding: 0 10px;
+      background: #e9f3ed;
+      color: var(--green-dark);
+      font-size: 12px;
+    }
+    .history-list { display: grid; gap: 8px; }
+    .history-item {
+      width: 100%;
+      height: auto;
+      margin: 0;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--ink);
+      text-align: left;
+      cursor: pointer;
+    }
+    .history-item.active { border-color: var(--green); box-shadow: 0 0 0 3px rgba(15, 138, 95, 0.10); }
+    .history-title { font-size: 13px; font-weight: 800; line-height: 1.35; overflow-wrap: anywhere; }
+    .history-meta { margin-top: 6px; color: var(--muted); font-size: 11px; line-height: 1.5; display: flex; flex-wrap: wrap; gap: 8px; }
     @media (max-width: 980px) {
       .shell { grid-template-columns: 1fr; }
       aside { border-right: 0; border-bottom: 1px solid var(--line); }
@@ -640,6 +923,11 @@ INDEX_HTML = r"""<!doctype html>
 
         <button id="runButton" type="submit">运行 Agent</button>
       </form>
+      <div class="history-head">
+        <h2>历史记录</h2>
+        <button id="refreshHistoryButton" class="mini-button" type="button">刷新</button>
+      </div>
+      <div id="historyList" class="history-list"><p class="empty">暂无历史记录。</p></div>
     </aside>
     <main>
       <div class="grid">
@@ -677,7 +965,12 @@ INDEX_HTML = r"""<!doctype html>
     const assetsEl = document.getElementById("assets");
     const submitDraftButton = document.getElementById("submitDraftButton");
     const submitHint = document.getElementById("submitHint");
+    const historyList = document.getElementById("historyList");
+    const refreshHistoryButton = document.getElementById("refreshHistoryButton");
     let currentJobId = "";
+
+    loadHistory();
+    refreshHistoryButton.addEventListener("click", loadHistory);
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -713,6 +1006,7 @@ INDEX_HTML = r"""<!doctype html>
         const job = await response.json();
         if (!response.ok) throw new Error(job.error || "启动失败");
         currentJobId = job.id;
+        loadHistory();
         pollJob(job.id);
       } catch (error) {
         statusEl.textContent = "failed";
@@ -730,6 +1024,7 @@ INDEX_HTML = r"""<!doctype html>
         const payload = await response.json();
         const job = payload.job || payload;
         renderJob(job);
+        loadHistory();
         if (!response.ok) throw new Error(payload.error || "提交失败");
       } catch (error) {
         submitHint.textContent = error.message;
@@ -740,20 +1035,69 @@ INDEX_HTML = r"""<!doctype html>
       const response = await fetch(`/api/jobs/${jobId}`);
       const job = await response.json();
       renderJob(job);
-      if (job.status === "queued" || job.status === "running") {
+      if (job.status === "queued" || job.status === "running" || job.status === "publishing") {
         setTimeout(() => pollJob(jobId), 1200);
       } else {
         runButton.disabled = false;
+        loadHistory();
       }
     }
 
     function renderJob(job) {
+      currentJobId = job.id || currentJobId;
       statusEl.textContent = job.status;
       eventsEl.innerHTML = (job.events || []).map(item => `<div class="event">${escapeHtml(item)}</div>`).join("");
       if (job.error) {
         eventsEl.innerHTML += `<p class="error">${escapeHtml(job.error)}</p>`;
       }
       if (job.result) renderResult(job.result);
+    }
+
+    async function loadHistory() {
+      try {
+        const response = await fetch("/api/jobs");
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "加载历史失败");
+        renderHistory(payload.jobs || []);
+      } catch (error) {
+        historyList.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
+      }
+    }
+
+    function renderHistory(jobs) {
+      if (!jobs.length) {
+        historyList.innerHTML = '<p class="empty">暂无历史记录。</p>';
+        return;
+      }
+      historyList.innerHTML = jobs.map(job => {
+        const options = job.options || {};
+        const active = job.id === currentJobId ? " active" : "";
+        return `
+          <button class="history-item${active}" type="button" data-job-id="${escapeHtml(job.id)}">
+            <div class="history-title">${escapeHtml(options.keyword || job.result?.keyword || "未命名内容")}</div>
+            <div class="history-meta">
+              <span>${escapeHtml(options.channel || "")}</span>
+              <span>${escapeHtml(job.status || "")}</span>
+              <span>${formatTime(job.updated_at)}</span>
+            </div>
+          </button>
+        `;
+      }).join("");
+      historyList.querySelectorAll(".history-item").forEach(button => {
+        button.addEventListener("click", () => loadJob(button.dataset.jobId));
+      });
+    }
+
+    async function loadJob(jobId) {
+      const response = await fetch(`/api/jobs/${jobId}`);
+      const job = await response.json();
+      if (!response.ok) {
+        historyList.innerHTML = `<p class="error">${escapeHtml(job.error || "记录不存在")}</p>`;
+        return;
+      }
+      currentJobId = job.id;
+      renderJob(job);
+      loadHistory();
     }
 
     function renderResult(result) {
@@ -809,6 +1153,11 @@ INDEX_HTML = r"""<!doctype html>
         '"': "&quot;",
         "'": "&#039;"
       }[char]));
+    }
+
+    function formatTime(value) {
+      if (!value) return "";
+      return new Date(value * 1000).toLocaleString("zh-CN", {hour12: false});
     }
   </script>
 </body>

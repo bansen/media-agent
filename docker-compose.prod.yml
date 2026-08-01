@@ -5,10 +5,34 @@ services:
     restart: unless-stopped
     env_file:
       - ${ENV_FILE:-.env.production}
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-media_agent}:${POSTGRES_PASSWORD:-media_agent_change_me}@db:5432/${POSTGRES_DB:-media_agent}
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
       - media-agent-output:/app/output
 
+  db:
+    image: postgres:16-alpine
+    container_name: media-agent-db
+    restart: unless-stopped
+    env_file:
+      - ${ENV_FILE:-.env.production}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-media_agent}
+      POSTGRES_USER: ${POSTGRES_USER:-media_agent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-media_agent_change_me}
+    volumes:
+      - media-agent-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-media_agent} -d $${POSTGRES_DB:-media_agent}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   media-agent-output:
+  media-agent-postgres:

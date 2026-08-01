@@ -18,6 +18,9 @@ class WebTests(unittest.TestCase):
         self.assertIn('id="useLlm"', html)
         self.assertIn('id="formatGzh"', html)
         self.assertIn('id="submitDraftButton"', html)
+        self.assertIn('id="historyList"', html)
+        self.assertIn("历史记录", html)
+        self.assertIn("loadHistory", html)
         self.assertNotIn('id="submitWechatDraft"', html)
 
     def test_index_html_keeps_long_names_readable(self):

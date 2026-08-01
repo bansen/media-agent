@@ -138,12 +138,21 @@ python3 -m content_agent.web --host 127.0.0.1 --port 8000
 
 Open `http://127.0.0.1:8000`.
 
-The first version is intentionally local and lightweight:
+The web workbench persists each generated run as a content record:
 
-- No login, no database, no multi-user queue.
 - Starts a background job for each run and polls `/api/jobs/<job_id>` for progress.
+- Saves job status, progress events, generated result JSON, preview paths, cover paths, and WeChat publish attempts in the database.
+- Lists historical records from `/api/jobs`; selecting a record restores its preview and allows submitting it to the WeChat draft box later.
 - Reuses the same collectors, LLM generation, gzh-design formatting, Replicate cover generation, and WeChat draft submission functions as the CLI.
 - Serves generated preview HTML and cover files from `output/` for local inspection.
+
+Local development defaults to `sqlite:///output/content_agent.db` if `DATABASE_URL` is not set. Production Docker Compose runs PostgreSQL and injects:
+
+```env
+DATABASE_URL=postgresql+psycopg://media_agent:media_agent_change_me@db:5432/media_agent
+```
+
+Change `POSTGRES_PASSWORD` and `DATABASE_URL` together in `.env.production`.
 
 ## Model Strategy
 

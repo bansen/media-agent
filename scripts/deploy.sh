@@ -21,5 +21,5 @@ compose() {
   docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml "$@"
 }
 
-compose pull app
-compose up -d app
+compose pull
+compose up -d

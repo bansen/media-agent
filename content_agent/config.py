@@ -23,6 +23,7 @@ class AgentConfig:
     wechat_app_secret: str
     wechat_access_token: str
     free_hot_sources: list[str]
+    database_url: str
 
     @classmethod
     def from_env_file(cls, path: str | Path = ".env") -> "AgentConfig":
@@ -45,6 +46,7 @@ class AgentConfig:
             wechat_app_secret=values.get("WECHAT_APP_SECRET", ""),
             wechat_access_token=values.get("WECHAT_ACCESS_TOKEN", ""),
             free_hot_sources=_parse_csv(values.get("FREE_HOT_SOURCES", "google_news_rss,hn,github")),
+            database_url=values.get("DATABASE_URL", ""),
         )
 
     def redacted_status(self) -> dict[str, str]:
@@ -60,6 +62,7 @@ class AgentConfig:
             "WECHAT_APP_SECRET": "SET" if self.wechat_app_secret else "EMPTY",
             "WECHAT_ACCESS_TOKEN": "SET" if self.wechat_access_token else "EMPTY",
             "FREE_HOT_SOURCES": ",".join(self.free_hot_sources) if self.free_hot_sources else "EMPTY",
+            "DATABASE_URL": "SET" if self.database_url else "EMPTY",
         }
 
     def build_llm_provider(self) -> OpenAICompatibleLLMProvider:

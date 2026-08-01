@@ -24,6 +24,7 @@ class ConfigTests(unittest.TestCase):
                         "BING_SEARCH_API_KEY=bing-secret",
                         "NEWSAPI_API_KEY=news-secret",
                         "FREE_HOT_SOURCES=google_news_rss,hn,github",
+                        "DATABASE_URL=postgresql+psycopg://user:password@db:5432/media_agent",
                         "RSSHUB_BASE_URL=https://rsshub.example",
                         "DAILYHOT_BASE_URL=https://dailyhot.example",
                     ]
@@ -44,6 +45,7 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(config.free_hot_sources, ["google_news_rss", "hn", "github"])
             self.assertEqual(config.redacted_status()["LLM_API_KEY"], "SET")
             self.assertEqual(config.redacted_status()["FREE_HOT_SOURCES"], "google_news_rss,hn,github")
+            self.assertEqual(config.redacted_status()["DATABASE_URL"], "SET")
             self.assertEqual(config.redacted_status()["WECHAT_ACCESS_TOKEN"], "EMPTY")
             self.assertNotIn("BING_SEARCH_API_KEY", config.redacted_status())
             self.assertNotIn("NEWSAPI_API_KEY", config.redacted_status())
@@ -63,6 +65,7 @@ class ConfigTests(unittest.TestCase):
             wechat_app_secret="appsecret",
             wechat_access_token="",
             free_hot_sources=["google_news_rss", "hn"],
+            database_url="postgresql+psycopg://user:password@db:5432/media_agent",
         )
 
         llm = config.build_llm_provider()

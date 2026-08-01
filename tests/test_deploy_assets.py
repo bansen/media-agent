@@ -38,6 +38,9 @@ class DeployAssetTests(unittest.TestCase):
         self.assertIn("deploy/nginx.media-agent.conf", workflow)
         self.assertIn("/etc/nginx/conf.d/media-agent.conf", workflow)
         self.assertIn("media-agent-app", compose)
+        self.assertIn("media-agent-db", compose)
+        self.assertIn("postgres:16-alpine", compose)
+        self.assertIn("DATABASE_URL", compose)
         self.assertIn("content_agent.web", dockerfile)
         self.assertIn("COPY .env.example ./.env.example", dockerfile)
         self.assertIn("--host\", \"0.0.0.0", dockerfile)
@@ -47,6 +50,7 @@ class DeployAssetTests(unittest.TestCase):
 
         self.assertIn("cp .env.example \"$ENV_FILE\"", script)
         self.assertIn("Created $APP_DIR/$ENV_FILE", script)
+        self.assertIn("compose up -d", script)
 
 
 if __name__ == "__main__":

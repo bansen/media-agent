@@ -41,6 +41,7 @@ class WeChatDraftPublishTests(unittest.TestCase):
             wechat_app_secret="secret",
             wechat_access_token="ACCESS_TOKEN",
             free_hot_sources=["google_news_rss", "hn", "github"],
+            database_url="",
         )
         publisher = FakeWeChatPublisher()
 
@@ -86,6 +87,7 @@ class WeChatDraftPublishTests(unittest.TestCase):
             wechat_app_secret="secret",
             wechat_access_token="ACCESS_TOKEN",
             free_hot_sources=["google_news_rss", "hn", "github"],
+            database_url="",
         )
         publisher = FakeWeChatPublisher()
 
@@ -116,6 +118,7 @@ class WeChatDraftPublishTests(unittest.TestCase):
             wechat_app_secret="secret",
             wechat_access_token="ACCESS_TOKEN",
             free_hot_sources=["google_news_rss", "hn", "github"],
+            database_url="",
         )
 
         with self.assertRaises(FileNotFoundError):
