@@ -13,6 +13,8 @@ class WebTests(unittest.TestCase):
 
         self.assertIn('id="keyword"', html)
         self.assertIn('value="free_hot"', html)
+        self.assertNotIn('value="public_search"', html)
+        self.assertNotIn("public_search API", html)
         self.assertIn('id="useLlm"', html)
         self.assertIn('id="formatGzh"', html)
         self.assertIn('id="submitDraftButton"', html)
@@ -58,6 +60,10 @@ class WebTests(unittest.TestCase):
         self.assertEqual(payload["topics"][0]["title"], "真实热榜里的 AI 副业趋势")
         self.assertIn("Collecting candidates with free_hot", events)
         self.assertIn("Scoring and building channel outputs", events)
+
+    def test_web_rejects_paid_public_search_collector(self):
+        with self.assertRaisesRegex(ValueError, "collector must be mock or free_hot"):
+            run_agent_workflow(WebRunOptions(keyword="AI副业", channel="wechat", collector="public_search"))
 
     def test_run_agent_workflow_can_format_gzh_preview(self):
         candidate = CandidateContent(

@@ -14,7 +14,6 @@ from urllib import parse
 from uuid import uuid4
 
 from .collectors.free_hot import collect_free_hot_candidates
-from .collectors.public_search import collect_public_search_candidates
 from .config import AgentConfig
 from .cover_generation import generate_cover_image
 from .formatters.wechat_gzh import format_wechat_markdown, write_gzh_outputs
@@ -25,7 +24,7 @@ from .wechat_publish import publish_wechat_draft
 from .workflow import run_keyword_workflow
 
 
-CollectorName = Literal["mock", "free_hot", "public_search"]
+CollectorName = Literal["mock", "free_hot"]
 ChannelName = Literal["wechat", "xiaohongshu"]
 JobStatus = Literal["queued", "running", "completed", "failed"]
 
@@ -242,7 +241,7 @@ class ContentAgentHandler(BaseHTTPRequestHandler):
             self._send_json(
                 {
                     "config": AgentConfig.from_env_file().redacted_status(),
-                    "collectors": ["mock", "free_hot", "public_search"],
+                    "collectors": ["mock", "free_hot"],
                     "channels": ["wechat", "xiaohongshu"],
                 }
             )
@@ -369,8 +368,8 @@ def _validate_options(options: WebRunOptions) -> None:
         raise ValueError("keyword cannot be empty")
     if options.channel not in {"wechat", "xiaohongshu"}:
         raise ValueError("channel must be wechat or xiaohongshu")
-    if options.collector not in {"mock", "free_hot", "public_search"}:
-        raise ValueError("collector must be mock, free_hot, or public_search")
+    if options.collector not in {"mock", "free_hot"}:
+        raise ValueError("collector must be mock or free_hot")
     if options.submit_wechat_draft and not options.wechat_cover_image and not options.generate_cover:
         raise ValueError("wechat_cover_image is required when submitting without generating a cover")
 
@@ -381,7 +380,7 @@ def _collect_candidates(options: WebRunOptions):
     config = AgentConfig.from_env_file()
     if options.collector == "free_hot":
         return collect_free_hot_candidates(options.keyword, config=config.build_free_hot_config())
-    return collect_public_search_candidates(options.keyword, config=config.build_public_search_config())
+    raise ValueError("collector must be mock or free_hot")
 
 
 def _to_jsonable(value):
@@ -625,9 +624,8 @@ INDEX_HTML = r"""<!doctype html>
 
         <label for="collector">数据源</label>
         <select id="collector" name="collector">
-          <option value="free_hot" selected>free_hot 免费热榜</option>
+          <option value="free_hot" selected>free_hot 关键词免费源</option>
           <option value="mock">mock 本地样例</option>
-          <option value="public_search">public_search API</option>
         </select>
 
         <label class="check"><input id="useLlm" type="checkbox">生成内容</label>

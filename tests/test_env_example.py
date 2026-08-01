@@ -14,19 +14,19 @@ class EnvExampleTests(unittest.TestCase):
         self.assertNotIn("BAIJIAHAO_APP_ID", env_example)
         self.assertNotIn("BAIJIAHAO_APP_TOKEN", env_example)
 
-    def test_public_search_keys_are_documented(self):
+    def test_paid_public_search_keys_are_not_documented(self):
         env_example = pathlib.Path(".env.example").read_text(encoding="utf-8")
 
-        self.assertIn("PUBLIC_SEARCH_PROVIDER=bing", env_example)
-        self.assertIn("BING_SEARCH_API_KEY=", env_example)
-        self.assertIn("NEWSAPI_API_KEY=", env_example)
+        self.assertNotIn("PUBLIC_SEARCH_PROVIDER", env_example)
+        self.assertNotIn("BING_SEARCH_API_KEY", env_example)
+        self.assertNotIn("NEWSAPI_API_KEY", env_example)
 
-    def test_free_hot_sources_are_documented(self):
+    def test_only_keyword_search_free_hot_sources_are_documented(self):
         env_example = pathlib.Path(".env.example").read_text(encoding="utf-8")
 
         self.assertIn("FREE_HOT_SOURCES=google_news_rss,hn,github", env_example)
-        self.assertIn("RSSHUB_BASE_URL=https://rsshub.app", env_example)
-        self.assertIn("DAILYHOT_BASE_URL=https://api-hot.imsyy.top", env_example)
+        self.assertNotIn("RSSHUB_BASE_URL", env_example)
+        self.assertNotIn("DAILYHOT_BASE_URL", env_example)
 
 
 if __name__ == "__main__":

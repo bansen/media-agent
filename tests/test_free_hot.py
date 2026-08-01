@@ -1,12 +1,10 @@
 import unittest
 
 from content_agent.collectors.free_hot import (
-    DailyHotCollector,
     FreeHotConfig,
     GitHubSearchCollector,
     GoogleNewsRssCollector,
     HNAlgoliaCollector,
-    RSSHubJsonFeedCollector,
     collect_free_hot_candidates,
 )
 
@@ -117,46 +115,6 @@ class FreeHotTests(unittest.TestCase):
 
         self.assertEqual([candidate.title for candidate in candidates], ["GitHub 项目：example/ai-tool"])
 
-    def test_rsshub_json_feed_maps_items_to_candidates(self):
-        runner = FakeRunner(
-            json_response={
-                "items": [
-                    {
-                        "title": "微博热搜：AI 应用爆发",
-                        "url": "https://weibo.example/a",
-                        "summary": "讨论量上升",
-                    }
-                ]
-            }
-        )
-        collector = RSSHubJsonFeedCollector(base_url="https://rsshub.example", route="/weibo/search/hot", runner=runner)
-
-        candidates = collector.collect("AI", limit=5)
-
-        self.assertEqual(candidates[0].source, "rsshub:/weibo/search/hot")
-        self.assertEqual(candidates[0].url, "https://weibo.example/a")
-        self.assertIn("format=json", runner.calls[0][1])
-
-    def test_dailyhot_maps_data_list_to_candidates(self):
-        runner = FakeRunner(
-            json_response={
-                "data": [
-                    {
-                        "title": "百度热搜：AI 副业",
-                        "url": "https://hot.example/a",
-                        "hot": "987万",
-                    }
-                ]
-            }
-        )
-        collector = DailyHotCollector(base_url="https://dailyhot.example", route="/baidu/", runner=runner)
-
-        candidates = collector.collect("AI副业", limit=5)
-
-        self.assertEqual(candidates[0].source, "dailyhot:/baidu/")
-        self.assertGreaterEqual(candidates[0].heat, 80)
-        self.assertIn("https://dailyhot.example/baidu/", runner.calls[0][1])
-
     def test_collect_free_hot_aggregates_configured_sources(self):
         google_runner = FakeRunner(
             text_response="<rss><channel><item><title>AI 新闻</title><link>https://g.example</link></item></channel></rss>"
@@ -171,6 +129,12 @@ class FreeHotTests(unittest.TestCase):
         candidates = collect_free_hot_candidates("AI", config=config, limit=10)
 
         self.assertEqual([candidate.source for candidate in candidates], ["google_news_rss", "hn_algolia"])
+
+    def test_collect_free_hot_rejects_non_keyword_hot_sources(self):
+        config = FreeHotConfig(sources=["dailyhot", "rsshub_weibo"])
+
+        with self.assertRaisesRegex(ValueError, "does not support keyword search"):
+            collect_free_hot_candidates("AI", config=config, limit=10)
 
     def test_collect_free_hot_balances_sources_when_first_source_has_many_items(self):
         google_runner = FakeRunner(

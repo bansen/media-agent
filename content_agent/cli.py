@@ -7,7 +7,6 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 
 from .collectors.free_hot import collect_free_hot_candidates
-from .collectors.public_search import collect_public_search_candidates
 from .config import AgentConfig
 from .cover_generation import generate_cover_image
 from .formatters.wechat_gzh import format_wechat_markdown, write_gzh_outputs
@@ -29,8 +28,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--collector",
         default="mock",
-        choices=["mock", "public_search", "free_hot"],
-        help="Topic source collector. mock uses sample data; public_search uses paid/keyed APIs; free_hot uses free public sources.",
+        choices=["mock", "free_hot"],
+        help="Topic source collector. mock uses sample data; free_hot uses keyword-searchable free public sources.",
     )
     parser.add_argument("--check-config", action="store_true", help="Print redacted configuration status.")
     parser.add_argument("--use-llm", action="store_true", help="Generate channel drafts with the configured LLM.")
@@ -143,10 +142,7 @@ def _collect_candidates(keyword: str, channel: str, collector: str):
         candidates = collect_free_hot_candidates(keyword, config=config.build_free_hot_config())
         _progress(f"Collected {len(candidates)} free hot candidates")
         return candidates
-    _progress("Collecting public search candidates")
-    candidates = collect_public_search_candidates(keyword, config=config.build_public_search_config())
-    _progress(f"Collected {len(candidates)} public search candidates")
-    return candidates
+    raise ValueError("collector must be mock or free_hot")
 
 
 def _wechat_outline_to_markdown(outline: str) -> str:

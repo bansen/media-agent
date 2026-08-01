@@ -36,15 +36,9 @@ class UrlLibFreeHotRunner:
 @dataclass(frozen=True)
 class FreeHotConfig:
     sources: list[str] = field(default_factory=lambda: ["google_news_rss", "hn", "github"])
-    rsshub_base_url: str = "https://rsshub.app"
-    rsshub_route: str = "/weibo/search/hot"
-    dailyhot_base_url: str = "https://api-hot.imsyy.top"
-    dailyhot_route: str = "/baidu/"
     google_news_runner: FreeHotRunner | None = None
     hn_runner: FreeHotRunner | None = None
     github_runner: FreeHotRunner | None = None
-    rsshub_runner: FreeHotRunner | None = None
-    dailyhot_runner: FreeHotRunner | None = None
 
 
 @dataclass(frozen=True)
@@ -143,66 +137,6 @@ class GitHubSearchCollector:
         return candidates
 
 
-@dataclass(frozen=True)
-class RSSHubJsonFeedCollector:
-    base_url: str
-    route: str
-    runner: FreeHotRunner | None = None
-
-    def collect(self, keyword: str, limit: int = 10) -> list[CandidateContent]:
-        _require_keyword(keyword)
-        url = _join_url(self.base_url, self.route)
-        separator = "&" if "?" in url else "?"
-        data = (self.runner or UrlLibFreeHotRunner()).get_json(
-            f"{url}{separator}format=json",
-            {"User-Agent": _user_agent()},
-        )
-        items = data.get("items", [])
-        return [
-            _candidate(
-                title=item.get("title", ""),
-                source=f"rsshub:{self.route}",
-                url=item.get("url") or item.get("id"),
-                snippet=item.get("summary") or item.get("content_text") or item.get("content_html") or "",
-                rank=index,
-                keyword=keyword,
-                heat_hint=8,
-                interaction_hint=8,
-            )
-            for index, item in enumerate(items[:limit])
-            if item.get("title")
-        ]
-
-
-@dataclass(frozen=True)
-class DailyHotCollector:
-    base_url: str
-    route: str
-    runner: FreeHotRunner | None = None
-
-    def collect(self, keyword: str, limit: int = 10) -> list[CandidateContent]:
-        _require_keyword(keyword)
-        data = (self.runner or UrlLibFreeHotRunner()).get_json(
-            _join_url(self.base_url, self.route),
-            {"User-Agent": _user_agent()},
-        )
-        items = data.get("data") if isinstance(data.get("data"), list) else data.get("items", [])
-        return [
-            _candidate(
-                title=item.get("title", ""),
-                source=f"dailyhot:{self.route}",
-                url=item.get("url") or item.get("link") or item.get("mobileUrl"),
-                snippet=str(item.get("hot") or item.get("desc") or item.get("summary") or ""),
-                rank=index,
-                keyword=keyword,
-                heat_hint=15,
-                interaction_hint=10,
-            )
-            for index, item in enumerate(items[:limit])
-            if item.get("title")
-        ]
-
-
 def collect_free_hot_candidates(keyword: str, config: FreeHotConfig, limit: int = 10) -> list[CandidateContent]:
     source_candidates = [collector.collect(keyword, limit=limit) for collector in _build_collectors(config)]
     return _round_robin_dedupe(source_candidates, limit=limit)
@@ -240,21 +174,9 @@ def _build_collectors(config: FreeHotConfig):
         elif normalized == "github":
             collectors.append(GitHubSearchCollector(runner=config.github_runner))
         elif normalized == "rsshub_weibo":
-            collectors.append(
-                RSSHubJsonFeedCollector(
-                    base_url=config.rsshub_base_url,
-                    route=config.rsshub_route,
-                    runner=config.rsshub_runner,
-                )
-            )
+            raise ValueError("FREE_HOT_SOURCES source rsshub_weibo does not support keyword search")
         elif normalized == "dailyhot":
-            collectors.append(
-                DailyHotCollector(
-                    base_url=config.dailyhot_base_url,
-                    route=config.dailyhot_route,
-                    runner=config.dailyhot_runner,
-                )
-            )
+            raise ValueError("FREE_HOT_SOURCES source dailyhot does not support keyword search")
         else:
             raise ValueError(f"Unsupported free_hot source: {source}")
     if not collectors:
@@ -341,10 +263,6 @@ def _log_hint(value: float) -> float:
     if value <= 0:
         return 0
     return min(22, math.log10(value + 1) * 7)
-
-
-def _join_url(base_url: str, route: str) -> str:
-    return base_url.rstrip("/") + "/" + route.lstrip("/")
 
 
 def _require_keyword(keyword: str) -> None:

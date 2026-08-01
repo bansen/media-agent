@@ -133,30 +133,11 @@ class ProviderCliTests(unittest.TestCase):
         self.assertGreaterEqual(len(payload["topics"]), 1)
         self.assertIn("cover_prompt", payload)
 
-    def test_cli_can_use_public_search_collector(self):
-        stdout = io.StringIO()
-        public_candidate = CandidateContent(
-            title="真实搜索来的 AI 副业案例",
-            source="bing",
-            url="https://example.com/public",
-            heat=86,
-            interaction=80,
-            hook=82,
-            pain=78,
-            reuse=76,
-            material=74,
-        )
+    def test_cli_rejects_paid_public_search_collector(self):
+        with self.assertRaises(SystemExit) as raised:
+            main(["--keyword", "AI副业", "--collector", "public_search"])
 
-        with redirect_stdout(stdout), patch(
-            "content_agent.cli.collect_public_search_candidates",
-            return_value=[public_candidate],
-        ) as collect:
-            exit_code = main(["--keyword", "AI副业", "--collector", "public_search"])
-
-        payload = json.loads(stdout.getvalue())
-        self.assertEqual(exit_code, 0)
-        self.assertEqual(payload["topics"][0]["title"], "真实搜索来的 AI 副业案例")
-        collect.assert_called_once()
+        self.assertEqual(raised.exception.code, 2)
 
     def test_cli_can_use_free_hot_collector(self):
         stdout = io.StringIO()

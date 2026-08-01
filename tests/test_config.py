@@ -23,7 +23,7 @@ class ConfigTests(unittest.TestCase):
                         "PUBLIC_SEARCH_PROVIDER=all",
                         "BING_SEARCH_API_KEY=bing-secret",
                         "NEWSAPI_API_KEY=news-secret",
-                        "FREE_HOT_SOURCES=google_news_rss,hn,dailyhot",
+                        "FREE_HOT_SOURCES=google_news_rss,hn,github",
                         "RSSHUB_BASE_URL=https://rsshub.example",
                         "DAILYHOT_BASE_URL=https://dailyhot.example",
                     ]
@@ -36,16 +36,18 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(config.llm_provider, "deepseek")
             self.assertEqual(config.llm_model, "deepseek-chat")
             self.assertEqual(config.replicate_cover_model_version, "model-version")
-            self.assertEqual(config.public_search_provider, "all")
-            self.assertEqual(config.bing_search_api_key, "bing-secret")
-            self.assertEqual(config.newsapi_api_key, "news-secret")
-            self.assertEqual(config.free_hot_sources, ["google_news_rss", "hn", "dailyhot"])
-            self.assertEqual(config.rsshub_base_url, "https://rsshub.example")
-            self.assertEqual(config.dailyhot_base_url, "https://dailyhot.example")
+            self.assertFalse(hasattr(config, "public_search_provider"))
+            self.assertFalse(hasattr(config, "bing_search_api_key"))
+            self.assertFalse(hasattr(config, "newsapi_api_key"))
+            self.assertFalse(hasattr(config, "rsshub_base_url"))
+            self.assertFalse(hasattr(config, "dailyhot_base_url"))
+            self.assertEqual(config.free_hot_sources, ["google_news_rss", "hn", "github"])
             self.assertEqual(config.redacted_status()["LLM_API_KEY"], "SET")
-            self.assertEqual(config.redacted_status()["BING_SEARCH_API_KEY"], "SET")
-            self.assertEqual(config.redacted_status()["FREE_HOT_SOURCES"], "google_news_rss,hn,dailyhot")
+            self.assertEqual(config.redacted_status()["FREE_HOT_SOURCES"], "google_news_rss,hn,github")
             self.assertEqual(config.redacted_status()["WECHAT_ACCESS_TOKEN"], "EMPTY")
+            self.assertNotIn("BING_SEARCH_API_KEY", config.redacted_status())
+            self.assertNotIn("NEWSAPI_API_KEY", config.redacted_status())
+            self.assertNotIn("PUBLIC_SEARCH_PROVIDER", config.redacted_status())
             self.assertNotIn("BAIJIAHAO_APP_ID", config.redacted_status())
 
     def test_builds_provider_instances_from_config(self):
@@ -60,27 +62,17 @@ class ConfigTests(unittest.TestCase):
             wechat_app_id="appid",
             wechat_app_secret="appsecret",
             wechat_access_token="",
-            public_search_provider="bing",
-            bing_search_api_key="bing-secret",
-            newsapi_api_key="",
             free_hot_sources=["google_news_rss", "hn"],
-            rsshub_base_url="https://rsshub.app",
-            rsshub_route="/weibo/search/hot",
-            dailyhot_base_url="https://api-hot.imsyy.top",
-            dailyhot_route="/baidu/",
         )
 
         llm = config.build_llm_provider()
         image = config.build_image_provider()
         wechat = config.build_wechat_publisher()
-        search = config.build_public_search_config()
         free_hot = config.build_free_hot_config()
 
         self.assertEqual(llm.model, "deepseek-chat")
         self.assertEqual(image.model_version, "black-forest-labs/flux-1.1-pro")
         self.assertEqual(wechat.app_id, "appid")
-        self.assertEqual(search.provider, "bing")
-        self.assertEqual(search.bing_api_key, "bing-secret")
         self.assertEqual(free_hot.sources, ["google_news_rss", "hn"])
 
 

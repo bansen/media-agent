@@ -40,14 +40,7 @@ class WeChatDraftPublishTests(unittest.TestCase):
             wechat_app_id="appid",
             wechat_app_secret="secret",
             wechat_access_token="ACCESS_TOKEN",
-            public_search_provider="bing",
-            bing_search_api_key="",
-            newsapi_api_key="",
             free_hot_sources=["google_news_rss", "hn", "github"],
-            rsshub_base_url="https://rsshub.app",
-            rsshub_route="/weibo/search/hot",
-            dailyhot_base_url="https://api-hot.imsyy.top",
-            dailyhot_route="/baidu/",
         )
         publisher = FakeWeChatPublisher()
 
@@ -92,14 +85,7 @@ class WeChatDraftPublishTests(unittest.TestCase):
             wechat_app_id="appid",
             wechat_app_secret="secret",
             wechat_access_token="ACCESS_TOKEN",
-            public_search_provider="bing",
-            bing_search_api_key="",
-            newsapi_api_key="",
             free_hot_sources=["google_news_rss", "hn", "github"],
-            rsshub_base_url="https://rsshub.app",
-            rsshub_route="/weibo/search/hot",
-            dailyhot_base_url="https://api-hot.imsyy.top",
-            dailyhot_route="/baidu/",
         )
         publisher = FakeWeChatPublisher()
 
@@ -129,14 +115,7 @@ class WeChatDraftPublishTests(unittest.TestCase):
             wechat_app_id="appid",
             wechat_app_secret="secret",
             wechat_access_token="ACCESS_TOKEN",
-            public_search_provider="bing",
-            bing_search_api_key="",
-            newsapi_api_key="",
             free_hot_sources=["google_news_rss", "hn", "github"],
-            rsshub_base_url="https://rsshub.app",
-            rsshub_route="/weibo/search/hot",
-            dailyhot_base_url="https://api-hot.imsyy.top",
-            dailyhot_route="/baidu/",
         )
 
         with self.assertRaises(FileNotFoundError):

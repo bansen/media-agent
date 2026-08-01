@@ -20,13 +20,7 @@ python3 -m unittest discover -s tests -v
 python3 -m content_agent.cli --keyword "AI副业"
 ```
 
-Use public search APIs instead of mock candidates:
-
-```bash
-python3 -m content_agent.cli --keyword "AI副业" --channel wechat --collector public_search
-```
-
-Use free hot-topic sources without paid API keys:
+Use keyword-searchable free sources without paid API keys:
 
 ```bash
 python3 -m content_agent.cli --keyword "AI副业" --channel wechat --collector free_hot
@@ -107,36 +101,9 @@ The current MVP uses `content_agent/mock_data.py` instead of live platform colle
 
 Replace `get_mock_candidates()` with a real collector later without changing the workflow contract.
 
-## Public Search Data
-
-The MVP can collect topic candidates from public search APIs and map them into the existing scoring workflow.
-
-```env
-PUBLIC_SEARCH_PROVIDER=bing
-BING_SEARCH_API_KEY=your_bing_key
-NEWSAPI_API_KEY=your_newsapi_key
-```
-
-Supported values:
-
-- `bing` - Bing Web Search API, good for broad web topic discovery.
-- `newsapi` - NewsAPI `/v2/everything`, good for recent news and article angles.
-- `all` - merge configured providers and dedupe by URL.
-
-Run with:
-
-```bash
-python3 -m content_agent.cli \
-  --keyword "AI副业" \
-  --channel wechat \
-  --collector public_search
-```
-
-Google Programmable Search is not the first adapter because its Custom Search JSON API has a deprecation notice for new users; add it later only if the account already has access.
-
 ## Free Hot Data
 
-`free_hot` collects topic candidates from free public sources and keeps paid API keys optional.
+`free_hot` collects topic candidates from free public sources that support keyword search. Paid/keyed APIs and fixed hot-list feeds are intentionally not exposed in the product workflow.
 
 Default sources:
 
@@ -149,18 +116,6 @@ Supported sources:
 - `google_news_rss` - Google News RSS keyword search, no key.
 - `hn` - Hacker News Algolia search, no key.
 - `github` - GitHub repository search, no key for low-volume public requests.
-- `rsshub_weibo` - RSSHub JSON Feed route such as `/weibo/search/hot`; self-hosting is recommended for stability.
-- `dailyhot` - DailyHotApi route such as `/baidu/`; self-hosting is recommended for stability.
-
-Domestic hot-list example:
-
-```env
-FREE_HOT_SOURCES=rsshub_weibo,dailyhot,google_news_rss
-RSSHUB_BASE_URL=https://rsshub.app
-RSSHUB_ROUTE=/weibo/search/hot
-DAILYHOT_BASE_URL=https://api-hot.imsyy.top
-DAILYHOT_ROUTE=/baidu/
-```
 
 Run with:
 
