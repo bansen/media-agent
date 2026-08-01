@@ -4,8 +4,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from content_agent.models import CandidateContent
+from content_agent.config import AgentConfig
 from content_agent.web import (
     SESSION_COOKIE,
+    ContentAgentHandler,
+    JobStore,
     WebJob,
     WebRunOptions,
     render_index_html,
@@ -32,6 +35,8 @@ class WebTests(unittest.TestCase):
         self.assertIn("loadHistory", html)
         self.assertIn('href="/settings/wechat"', html)
         self.assertIn("公众号参数", html)
+        self.assertIn('href="/auth/wechat-official/start"', html)
+        self.assertIn("授权公众号", html)
         self.assertNotIn('id="submitWechatDraft"', html)
 
     def test_landing_html_introduces_product_with_platform_neutral_ctas(self):
@@ -54,6 +59,7 @@ class WebTests(unittest.TestCase):
         self.assertIn("选择要试用的平台", html)
         self.assertIn("微信公众号", html)
         self.assertIn('href="/auth/wechat/start?next=/app"', html)
+        self.assertIn('href="/auth/wechat-official/start"', html)
         self.assertIn('href="/auth/manual"', html)
         self.assertIn("百家号", html)
         self.assertIn("小红书", html)
@@ -228,6 +234,50 @@ class WebTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "completed preview"):
             submit_previewed_wechat_draft(job)
+
+    def test_wechat_publish_config_prefers_component_authorized_account(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = JobStore(database_url=f"sqlite:///{Path(tmpdir) / 'web.db'}", auto_start=False)
+            user = store.auth.upsert_external_user(provider="wechat", provider_user_id="openid-1", display_name="用户")
+            store.auth.update_manual_wechat_account(
+                user_id=user.id,
+                display_name="手动公众号",
+                app_id="wx-manual",
+                app_secret="manual-secret",
+                access_token="manual-token",
+            )
+            store.auth.upsert_component_wechat_account(
+                user_id=user.id,
+                authorizer_appid="wx-authorizer",
+                display_name="授权公众号",
+                authorizer_refresh_token="refresh-token",
+                authorizer_access_token="component-token",
+                expires_in=7200,
+                profile={},
+            )
+            handler = object.__new__(ContentAgentHandler)
+            handler.store = store
+            base_config = AgentConfig(
+                llm_provider="deepseek",
+                llm_base_url="https://api.deepseek.com",
+                llm_model="deepseek-chat",
+                llm_api_key="secret",
+                replicate_api_token="replicate-secret",
+                replicate_cover_model_version="",
+                replicate_cover_model="black-forest-labs/flux-1.1-pro",
+                wechat_app_id="env-app",
+                wechat_app_secret="env-secret",
+                wechat_access_token="",
+                free_hot_sources=["google_news_rss"],
+                database_url=f"sqlite:///{Path(tmpdir) / 'web.db'}",
+            )
+
+            with patch("content_agent.web.AgentConfig.from_env_file", return_value=base_config):
+                publish_config = handler._wechat_publish_config_for_user(user.id)
+
+        self.assertEqual(publish_config.wechat_app_id, "wx-authorizer")
+        self.assertEqual(publish_config.wechat_app_secret, "")
+        self.assertEqual(publish_config.wechat_access_token, "component-token")
 
 
 if __name__ == "__main__":

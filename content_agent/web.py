@@ -16,7 +16,15 @@ from uuid import uuid4
 
 from sqlalchemy import select
 
-from .auth import SESSION_COOKIE, AuthStore, WeChatLoginConfig, WeChatOAuthProvider
+from .auth import (
+    SESSION_COOKIE,
+    AuthStore,
+    WeChatComponentConfig,
+    WeChatComponentProvider,
+    WeChatLoginConfig,
+    WeChatOAuthProvider,
+    parse_wechat_component_event,
+)
 from .collectors.free_hot import collect_free_hot_candidates
 from .config import AgentConfig
 from .cover_generation import generate_cover_image
@@ -517,6 +525,15 @@ class ContentAgentHandler(BaseHTTPRequestHandler):
         if parsed.path == "/auth/wechat/callback":
             self._finish_wechat_auth(parsed.query)
             return
+        if parsed.path == "/auth/wechat-official/start":
+            self._start_wechat_official_auth()
+            return
+        if parsed.path == "/auth/wechat-official/callback":
+            self._finish_wechat_official_auth(parsed.query)
+            return
+        if parsed.path == "/wechat/component/notify":
+            self._verify_wechat_component_notify(parsed.query)
+            return
         if parsed.path == "/auth/manual":
             self._send_html(render_manual_auth_html())
             return
@@ -568,6 +585,9 @@ class ContentAgentHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = parse.urlparse(self.path)
+        if parsed.path == "/wechat/component/notify":
+            self._handle_wechat_component_notify(parsed.query)
+            return
         if parsed.path == "/auth/manual":
             self._finish_manual_auth()
             return
@@ -635,6 +655,10 @@ class ContentAgentHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         return self.rfile.read(length).decode("utf-8")
 
+    def _read_text_body(self) -> str:
+        length = int(self.headers.get("Content-Length", "0"))
+        return self.rfile.read(length).decode("utf-8")
+
     def _send_html(self, html: str, status: HTTPStatus = HTTPStatus.OK) -> None:
         body = html.encode("utf-8")
         self.send_response(status)
@@ -647,6 +671,14 @@ class ContentAgentHandler(BaseHTTPRequestHandler):
         body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_text(self, text: str, status: HTTPStatus = HTTPStatus.OK) -> None:
+        body = text.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -713,6 +745,73 @@ class ContentAgentHandler(BaseHTTPRequestHandler):
         session_token = self.store.auth.create_session(user.id)
         self._redirect(next_path, cookies=[_session_cookie(session_token)])
 
+    def _start_wechat_official_auth(self) -> None:
+        if self._current_user() is None:
+            self._redirect("/auth/wechat/start?next=/auth/wechat-official/start")
+            return
+        config = self._wechat_component_config()
+        if not config.is_configured_for_auth() or not config.can_fetch_component_token():
+            self._send_html(render_wechat_component_setup_html())
+            return
+        provider = WeChatComponentProvider(config)
+        state = self.store.auth.create_oauth_state(provider="wechat_official", next_path="/settings/wechat")
+        try:
+            component_access_token = provider.fetch_component_access_token()
+            pre_auth_code = provider.fetch_pre_auth_code(component_access_token)
+            self._redirect(provider.authorization_url(pre_auth_code=pre_auth_code, state=state))
+        except Exception as exc:
+            self._send_html(render_wechat_component_setup_html(error=str(exc)), status=HTTPStatus.BAD_REQUEST)
+
+    def _finish_wechat_official_auth(self, query: str) -> None:
+        user = self._require_user()
+        if user is None:
+            return
+        params = parse.parse_qs(query)
+        state = params.get("state", [""])[0]
+        auth_code = params.get("auth_code", params.get("authorization_code", [""]))[0]
+        next_path = self.store.auth.consume_oauth_state(state, provider="wechat_official")
+        if not auth_code or next_path is None:
+            self._send_json({"error": "invalid wechat official authorization state"}, status=HTTPStatus.BAD_REQUEST)
+            return
+        provider = WeChatComponentProvider(self._wechat_component_config())
+        try:
+            component_access_token = provider.fetch_component_access_token()
+            auth_info = provider.query_auth(auth_code, component_access_token)
+            authorizer_appid = str(auth_info.get("authorizer_appid", ""))
+            profile = provider.fetch_authorizer_info(authorizer_appid, component_access_token)
+            display_name = str(profile.get("nick_name") or profile.get("principal_name") or authorizer_appid)
+            self.store.auth.upsert_component_wechat_account(
+                user_id=user["id"],
+                authorizer_appid=authorizer_appid,
+                display_name=display_name,
+                authorizer_refresh_token=str(auth_info.get("authorizer_refresh_token", "")),
+                authorizer_access_token=str(auth_info.get("authorizer_access_token", "")),
+                expires_in=int(auth_info.get("expires_in") or 7200),
+                profile=profile,
+            )
+            self._redirect(next_path)
+        except Exception as exc:
+            self._send_html(render_wechat_component_setup_html(error=str(exc)), status=HTTPStatus.BAD_REQUEST)
+
+    def _verify_wechat_component_notify(self, query: str) -> None:
+        params = parse.parse_qs(query)
+        echo = params.get("echostr", [""])[0]
+        self._send_text(echo or "success")
+
+    def _handle_wechat_component_notify(self, query: str) -> None:
+        params = parse.parse_qs(query)
+        try:
+            event = parse_wechat_component_event(
+                self._read_text_body(),
+                config=self._wechat_component_config(),
+                query_params=params,
+            )
+            if event.get("InfoType") == "component_verify_ticket":
+                self.store.auth.save_wechat_component_verify_ticket(event.get("ComponentVerifyTicket", ""))
+            self._send_text("success")
+        except Exception as exc:
+            self._send_text(str(exc), status=HTTPStatus.BAD_REQUEST)
+
     def _logout(self) -> None:
         self.store.auth.delete_session(self._session_token())
         self._redirect("/", cookies=[_expired_session_cookie()])
@@ -756,6 +855,16 @@ class ContentAgentHandler(BaseHTTPRequestHandler):
 
     def _wechat_publish_config_for_user(self, user_id: int) -> AgentConfig:
         config = AgentConfig.from_env_file()
+        component_account = self.store.auth.component_wechat_account_for_user(user_id)
+        if component_account:
+            authorizer_access_token = self._component_authorizer_access_token(user_id, component_account)
+            if authorizer_access_token:
+                return replace(
+                    config,
+                    wechat_app_id=component_account.get("authorizer_appid", "") or config.wechat_app_id,
+                    wechat_app_secret="",
+                    wechat_access_token=authorizer_access_token,
+                )
         account = self.store.auth.manual_wechat_account_for_user(user_id)
         if not account:
             return config
@@ -765,6 +874,37 @@ class ContentAgentHandler(BaseHTTPRequestHandler):
             wechat_app_secret=account.get("app_secret", "") or config.wechat_app_secret,
             wechat_access_token=account.get("access_token", "") or config.wechat_access_token,
         )
+
+    def _component_authorizer_access_token(self, user_id: int, account: dict) -> str:
+        access_token = str(account.get("authorizer_access_token", ""))
+        expires_at = float(account.get("authorizer_access_token_expires_at") or 0)
+        if access_token and expires_at > time() + 60:
+            return access_token
+        refresh_token = str(account.get("authorizer_refresh_token", ""))
+        authorizer_appid = str(account.get("authorizer_appid", ""))
+        if not refresh_token or not authorizer_appid:
+            return access_token
+        refreshed = WeChatComponentProvider(self._wechat_component_config()).refresh_authorizer_access_token(
+            authorizer_appid=authorizer_appid,
+            authorizer_refresh_token=refresh_token,
+        )
+        stored = self.store.auth.update_component_wechat_token(
+            user_id=user_id,
+            authorizer_appid=authorizer_appid,
+            authorizer_access_token=str(refreshed.get("authorizer_access_token", "")),
+            expires_in=int(refreshed.get("expires_in") or 7200),
+            authorizer_refresh_token=str(refreshed.get("authorizer_refresh_token", "")),
+        )
+        return str(stored.get("authorizer_access_token", ""))
+
+    def _wechat_component_config(self) -> WeChatComponentConfig:
+        config = WeChatComponentConfig.from_env()
+        if config.verify_ticket:
+            return config
+        stored_ticket = self.store.auth.wechat_component_verify_ticket()
+        if not stored_ticket:
+            return config
+        return replace(config, verify_ticket=stored_ticket)
 
     def _send_file(self, query: str, user_id: int) -> None:
         params = parse.parse_qs(query)
@@ -948,6 +1088,11 @@ def render_wechat_settings_html(account: dict, message: str = "", error: str = "
     )
 
 
+def render_wechat_component_setup_html(error: str = "") -> str:
+    error_html = f'<p class="error">{html_escape(error)}</p>' if error else ""
+    return WECHAT_COMPONENT_SETUP_HTML.replace("{{ERROR}}", error_html)
+
+
 def html_escape(value: str) -> str:
     return (
         str(value)
@@ -1098,7 +1243,8 @@ TRIAL_HTML = r"""<!doctype html>
         <h2>微信公众号</h2>
         <p>适合先跑通选题、内容、排版、封面和草稿箱提交流程。</p>
         <div class="actions">
-          <a class="button primary" href="/auth/wechat/start?next=/app">授权登录</a>
+          <a class="button primary" href="/auth/wechat/start?next=/app">登录工作台</a>
+          <a class="button secondary" href="/auth/wechat-official/start">授权公众号</a>
           <a class="button secondary" href="/auth/manual">手动填写参数</a>
         </div>
       </article>
@@ -1238,6 +1384,40 @@ AUTH_SETUP_HTML = r"""<!doctype html>
     <code>WECHAT_LOGIN_REDIRECT_URI=https://media-agent.createbeauty.top/auth/wechat/callback</code>
     <p>配置完成并重新部署后，点击试用会跳转微信扫码授权登录。</p>
     <p><a href="/">返回首页</a></p>
+  </main>
+</body>
+</html>"""
+
+
+WECHAT_COMPONENT_SETUP_HTML = r"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>配置公众号授权 - Media Agent</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f6f7f2; color: #14211d; font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    main { width: min(720px, calc(100% - 36px)); background: #fff; border: 1px solid #dce3dc; border-radius: 8px; padding: 28px; box-shadow: 0 24px 70px rgba(20, 33, 29, .10); }
+    h1 { margin: 0 0 12px; font-size: 24px; }
+    p { color: #60706a; line-height: 1.7; }
+    code { display: block; padding: 12px; margin: 10px 0; background: #f3f6f1; border-radius: 8px; color: #0f6044; overflow-wrap: anywhere; }
+    .error { color: #b23b3b; font-weight: 800; }
+    a { color: #0f8a5f; font-weight: 800; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>需要先配置微信开放平台公众号授权</h1>
+    <p>这是多人 SaaS 的公众号授权方式：用户授权自己的公众号给平台，平台用授权后的 authorizer token 提交草稿，不需要每个用户填写 AppSecret。</p>
+    {{ERROR}}
+    <code>WECHAT_COMPONENT_APP_ID=</code>
+    <code>WECHAT_COMPONENT_APP_SECRET=</code>
+    <code>WECHAT_COMPONENT_TOKEN=</code>
+    <code>WECHAT_COMPONENT_AES_KEY=</code>
+    <code>WECHAT_COMPONENT_AUTH_REDIRECT_URI=https://media-agent.createbeauty.top/auth/wechat-official/callback</code>
+    <code>WECHAT_COMPONENT_VERIFY_TICKET=</code>
+    <p>如果已经有可用的 component_access_token，也可以临时配置 <code>WECHAT_COMPONENT_ACCESS_TOKEN=</code> 跑通授权链路。</p>
+    <p><a href="/app">返回工作台</a></p>
   </main>
 </body>
 </html>"""
@@ -1428,6 +1608,7 @@ INDEX_HTML = r"""<!doctype html>
       <h1>Content Agent 内容工作台</h1>
       <p class="sub">关键词到选题、内容、排版、封面和草稿箱的本地工作台。</p>
       <div class="account-links">
+        <a href="/auth/wechat-official/start">授权公众号</a>
         <a href="/settings/wechat">公众号参数</a>
         <a href="/auth/logout">退出登录</a>
       </div>

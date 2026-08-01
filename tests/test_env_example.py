@@ -28,6 +28,18 @@ class EnvExampleTests(unittest.TestCase):
         self.assertNotIn("RSSHUB_BASE_URL", env_example)
         self.assertNotIn("DAILYHOT_BASE_URL", env_example)
 
+    def test_wechat_component_authorization_config_is_documented(self):
+        env_example = pathlib.Path(".env.example").read_text(encoding="utf-8")
+
+        self.assertIn("WECHAT_COMPONENT_APP_ID=", env_example)
+        self.assertIn("WECHAT_COMPONENT_APP_SECRET=", env_example)
+        self.assertIn("WECHAT_COMPONENT_TOKEN=", env_example)
+        self.assertIn("WECHAT_COMPONENT_AES_KEY=", env_example)
+        self.assertIn(
+            "WECHAT_COMPONENT_AUTH_REDIRECT_URI=https://media-agent.createbeauty.top/auth/wechat-official/callback",
+            env_example,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

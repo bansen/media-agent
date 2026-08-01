@@ -3,7 +3,14 @@ import unittest
 from pathlib import Path
 from urllib import parse
 
-from content_agent.auth import AuthStore, WeChatLoginConfig, WeChatOAuthProvider
+from content_agent.auth import (
+    AuthStore,
+    WeChatComponentConfig,
+    WeChatComponentProvider,
+    WeChatLoginConfig,
+    WeChatOAuthProvider,
+    parse_wechat_component_event,
+)
 from content_agent.database import build_engine, init_schema, session_factory
 
 
@@ -97,6 +104,77 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(account["app_id"], "wx-new-app")
         self.assertEqual(account["app_secret"], "old-secret")
         self.assertEqual(account["access_token"], "new-token")
+
+    def test_wechat_component_provider_builds_official_account_auth_url(self):
+        provider = WeChatComponentProvider(
+            WeChatComponentConfig(
+                app_id="wx-component",
+                app_secret="component-secret",
+                token="verify-token",
+                aes_key="abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
+                auth_redirect_uri="https://media-agent.createbeauty.top/auth/wechat-official/callback",
+            )
+        )
+
+        url = provider.authorization_url(pre_auth_code="PRE_AUTH_CODE")
+        parsed = parse.urlparse(url)
+        params = parse.parse_qs(parsed.query)
+
+        self.assertEqual(parsed.netloc, "mp.weixin.qq.com")
+        self.assertEqual(parsed.path, "/cgi-bin/componentloginpage")
+        self.assertEqual(params["component_appid"], ["wx-component"])
+        self.assertEqual(params["pre_auth_code"], ["PRE_AUTH_CODE"])
+        self.assertEqual(
+            params["redirect_uri"],
+            ["https://media-agent.createbeauty.top/auth/wechat-official/callback"],
+        )
+        self.assertEqual(params["auth_type"], ["3"])
+
+    def test_auth_store_saves_component_authorized_wechat_account(self):
+        store = _auth_store()
+        user = store.upsert_external_user(provider="wechat", provider_user_id="openid-1", display_name="用户")
+
+        store.upsert_component_wechat_account(
+            user_id=user.id,
+            authorizer_appid="wx-authorizer",
+            display_name="授权公众号",
+            authorizer_refresh_token="refresh-token",
+            authorizer_access_token="access-token",
+            expires_in=7200,
+            profile={"nick_name": "授权公众号"},
+        )
+
+        account = store.component_wechat_account_for_user(user.id)
+        self.assertEqual(account["auth_type"], "component")
+        self.assertEqual(account["authorizer_appid"], "wx-authorizer")
+        self.assertEqual(account["display_name"], "授权公众号")
+        self.assertEqual(account["authorizer_refresh_token"], "refresh-token")
+        self.assertEqual(account["authorizer_access_token"], "access-token")
+        self.assertEqual(account["profile"]["nick_name"], "授权公众号")
+
+    def test_auth_store_saves_component_verify_ticket_from_event(self):
+        store = _auth_store()
+
+        store.save_wechat_component_verify_ticket("ticket-123")
+
+        self.assertEqual(store.wechat_component_verify_ticket(), "ticket-123")
+
+    def test_parse_wechat_component_plain_ticket_event(self):
+        raw_xml = """
+        <xml>
+          <InfoType><![CDATA[component_verify_ticket]]></InfoType>
+          <ComponentVerifyTicket><![CDATA[ticket-123]]></ComponentVerifyTicket>
+        </xml>
+        """
+
+        event = parse_wechat_component_event(
+            raw_xml,
+            config=WeChatComponentConfig(app_id="wx-component", token="token"),
+            query_params={},
+        )
+
+        self.assertEqual(event["InfoType"], "component_verify_ticket")
+        self.assertEqual(event["ComponentVerifyTicket"], "ticket-123")
 
 
 def _auth_store() -> AuthStore:

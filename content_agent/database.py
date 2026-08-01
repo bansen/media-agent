@@ -86,6 +86,14 @@ class OAuthStateRow(Base):
     consumed_at: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
+class ComponentStateRow(Base):
+    __tablename__ = "component_states"
+
+    provider: Mapped[str] = mapped_column(String(60), primary_key=True)
+    values_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[float] = mapped_column(Float)
+
+
 class ContentJobRow(Base):
     __tablename__ = "content_jobs"
 

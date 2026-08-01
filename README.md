@@ -142,7 +142,7 @@ The root page is a public product intro page with platform-neutral trial CTAs. I
 
 - WeChat official account is currently open.
 - Baijiahao and Xiaohongshu are shown as coming soon.
-- For WeChat, users can use open-platform login or manually fill AppID/AppSecret/access token from WeChat Official Account Platform, enter the workbench, and later edit them from "公众号参数".
+- For WeChat, users first log in to the workbench, then either authorize their official account through WeChat Open Platform or manually fill AppID/AppSecret/access token from WeChat Official Account Platform.
 
 The web workbench persists each generated run as a content record:
 
@@ -160,6 +160,42 @@ DATABASE_URL=postgresql+psycopg://media_agent:media_agent_change_me@db:5432/medi
 ```
 
 Change `POSTGRES_PASSWORD` and `DATABASE_URL` together in `.env.production`.
+
+### WeChat Login vs Official Account Authorization
+
+There are two separate WeChat flows:
+
+- WeChat website login identifies the Media Agent user and creates a local session.
+- WeChat Open Platform official-account authorization gives Media Agent permission to submit drafts to the user's own official account without asking that user for AppSecret.
+
+Website login config:
+
+```env
+WECHAT_LOGIN_APP_ID=
+WECHAT_LOGIN_APP_SECRET=
+WECHAT_LOGIN_REDIRECT_URI=https://media-agent.createbeauty.top/auth/wechat/callback
+WECHAT_LOGIN_SCOPE=snsapi_login
+```
+
+Official-account authorization config:
+
+```env
+WECHAT_COMPONENT_APP_ID=
+WECHAT_COMPONENT_APP_SECRET=
+WECHAT_COMPONENT_TOKEN=
+WECHAT_COMPONENT_AES_KEY=
+WECHAT_COMPONENT_AUTH_REDIRECT_URI=https://media-agent.createbeauty.top/auth/wechat-official/callback
+WECHAT_COMPONENT_VERIFY_TICKET=
+WECHAT_COMPONENT_ACCESS_TOKEN=
+```
+
+`WECHAT_COMPONENT_VERIFY_TICKET` is normally pushed by WeChat to the third-party platform event endpoint. For the first production run, you can also configure a valid `WECHAT_COMPONENT_ACCESS_TOKEN` to validate the authorization flow, then replace that with automated encrypted event handling.
+
+Configure the WeChat Open Platform authorization event URL as:
+
+```text
+https://media-agent.createbeauty.top/wechat/component/notify
+```
 
 ## Model Strategy
 

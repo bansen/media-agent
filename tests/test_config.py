@@ -20,6 +20,13 @@ class ConfigTests(unittest.TestCase):
                         "REPLICATE_COVER_MODEL_VERSION=model-version",
                         "WECHAT_APP_ID=appid",
                         "WECHAT_APP_SECRET=appsecret",
+                        "WECHAT_COMPONENT_APP_ID=component-appid",
+                        "WECHAT_COMPONENT_APP_SECRET=component-secret",
+                        "WECHAT_COMPONENT_TOKEN=component-token",
+                        "WECHAT_COMPONENT_AES_KEY=component-aes-key",
+                        "WECHAT_COMPONENT_AUTH_REDIRECT_URI=https://media-agent.createbeauty.top/auth/wechat-official/callback",
+                        "WECHAT_COMPONENT_VERIFY_TICKET=component-ticket",
+                        "WECHAT_COMPONENT_ACCESS_TOKEN=component-access-token",
                         "PUBLIC_SEARCH_PROVIDER=all",
                         "BING_SEARCH_API_KEY=bing-secret",
                         "NEWSAPI_API_KEY=news-secret",
@@ -43,10 +50,21 @@ class ConfigTests(unittest.TestCase):
             self.assertFalse(hasattr(config, "rsshub_base_url"))
             self.assertFalse(hasattr(config, "dailyhot_base_url"))
             self.assertEqual(config.free_hot_sources, ["google_news_rss", "hn", "github"])
+            self.assertEqual(config.wechat_component_app_id, "component-appid")
+            self.assertEqual(
+                config.wechat_component_auth_redirect_uri,
+                "https://media-agent.createbeauty.top/auth/wechat-official/callback",
+            )
             self.assertEqual(config.redacted_status()["LLM_API_KEY"], "SET")
             self.assertEqual(config.redacted_status()["FREE_HOT_SOURCES"], "google_news_rss,hn,github")
             self.assertEqual(config.redacted_status()["DATABASE_URL"], "SET")
             self.assertEqual(config.redacted_status()["WECHAT_ACCESS_TOKEN"], "EMPTY")
+            self.assertEqual(config.redacted_status()["WECHAT_COMPONENT_APP_ID"], "SET")
+            self.assertEqual(config.redacted_status()["WECHAT_COMPONENT_APP_SECRET"], "SET")
+            self.assertEqual(config.redacted_status()["WECHAT_COMPONENT_TOKEN"], "SET")
+            self.assertEqual(config.redacted_status()["WECHAT_COMPONENT_AES_KEY"], "SET")
+            self.assertEqual(config.redacted_status()["WECHAT_COMPONENT_VERIFY_TICKET"], "SET")
+            self.assertEqual(config.redacted_status()["WECHAT_COMPONENT_ACCESS_TOKEN"], "SET")
             self.assertNotIn("BING_SEARCH_API_KEY", config.redacted_status())
             self.assertNotIn("NEWSAPI_API_KEY", config.redacted_status())
             self.assertNotIn("PUBLIC_SEARCH_PROVIDER", config.redacted_status())
