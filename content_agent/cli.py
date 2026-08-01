@@ -6,12 +6,12 @@ import sys
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 
-from .collectors.free_hot import collect_free_hot_candidates
+from .collectors.baidu_search import collect_baidu_search_candidates
 from .config import AgentConfig
 from .cover_generation import generate_cover_image
 from .formatters.wechat_gzh import format_wechat_markdown, write_gzh_outputs
 from .generation import generate_llm_drafts
-from .mock_data import get_mock_candidates
+from .keyword_seed import build_keyword_seed_candidates
 from .wechat_publish import publish_wechat_draft
 from .workflow import run_keyword_workflow
 
@@ -27,9 +27,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--collector",
-        default="mock",
-        choices=["mock", "free_hot"],
-        help="Topic source collector. mock uses sample data; free_hot uses keyword-searchable free public sources.",
+        default="baidu_search",
+        choices=["baidu_search"],
+        help="Topic source collector. baidu_search uses Baidu Qianfan web search.",
     )
     parser.add_argument("--check-config", action="store_true", help="Print redacted configuration status.")
     parser.add_argument("--use-llm", action="store_true", help="Generate channel drafts with the configured LLM.")
@@ -49,9 +49,13 @@ def main(argv: list[str] | None = None) -> int:
         print("--wechat-cover-image is required when --submit-wechat-draft is used without --generate-cover", file=sys.stderr)
         return 2
 
+    candidates = _collect_candidates(args.keyword, args.channel, args.collector)
+    if not candidates and args.collector == "baidu_search":
+        _progress("Baidu search returned no candidates; using keyword seed topics")
+        candidates = build_keyword_seed_candidates(args.keyword, args.channel)
     result = run_keyword_workflow(
         args.keyword,
-        candidates=_collect_candidates(args.keyword, args.channel, args.collector),
+        candidates=candidates,
         primary_channel=args.channel,
     )
     payload = _to_jsonable(result)
@@ -134,15 +138,13 @@ def _progress(message: str) -> None:
 
 
 def _collect_candidates(keyword: str, channel: str, collector: str):
-    if collector == "mock":
-        return get_mock_candidates(keyword, channel=channel)
     config = AgentConfig.from_env_file()
-    if collector == "free_hot":
-        _progress("Collecting free hot candidates")
-        candidates = collect_free_hot_candidates(keyword, config=config.build_free_hot_config())
-        _progress(f"Collected {len(candidates)} free hot candidates")
+    if collector == "baidu_search":
+        _progress("Collecting Baidu search candidates")
+        candidates = collect_baidu_search_candidates(keyword, api_key=config.baidu_search_api_key)
+        _progress(f"Collected {len(candidates)} Baidu search candidates")
         return candidates
-    raise ValueError("collector must be mock or free_hot")
+    raise ValueError("collector must be baidu_search")
 
 
 def _wechat_outline_to_markdown(outline: str) -> str:

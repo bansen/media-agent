@@ -20,10 +20,10 @@ python3 -m unittest discover -s tests -v
 python3 -m content_agent.cli --keyword "AI副业"
 ```
 
-Use keyword-searchable free sources without paid API keys:
+Use Baidu Qianfan search to collect the top keyword results:
 
 ```bash
-python3 -m content_agent.cli --keyword "AI副业" --channel wechat --collector free_hot
+python3 -m content_agent.cli --keyword "AI副业" --channel wechat
 ```
 
 Start the local web workbench:
@@ -92,41 +92,25 @@ This writes:
 - `output/<keyword>_排版_摸鱼绿(moyu-green).html` - clean WeChat body fragment.
 - `output/<keyword>_排版_摸鱼绿(moyu-green)_预览.html` - browser preview with a copy button.
 
-## Mock Data
+## Baidu Search Data
 
-The current MVP uses `content_agent/mock_data.py` instead of live platform collection. It includes mock candidates for:
+`baidu_search` is the only user-facing topic source. It queries Baidu Qianfan web search, filters obvious ads/promoted results, maps the first results into `CandidateContent`, then reuses the existing scoring, drafting, formatting, cover, and WeChat draft submission workflow.
 
-- WeChat: side hustles, AI earning, AI learning.
-- Xiaohongshu: workplace women, moms, health habits.
-
-Replace `get_mock_candidates()` with a real collector later without changing the workflow contract.
-
-## Free Hot Data
-
-`free_hot` collects topic candidates from free public sources that support keyword search. Paid/keyed APIs and fixed hot-list feeds are intentionally not exposed in the product workflow.
-
-Default sources:
+Configure:
 
 ```env
-FREE_HOT_SOURCES=google_news_rss,hn,github
+BAIDU_SEARCH_API_KEY=your_baidu_qianfan_key
 ```
-
-Supported sources:
-
-- `google_news_rss` - Google News RSS keyword search, no key.
-- `hn` - Hacker News Algolia search, no key.
-- `github` - GitHub repository search, no key for low-volume public requests.
 
 Run with:
 
 ```bash
 python3 -m content_agent.cli \
   --keyword "AI副业" \
-  --channel wechat \
-  --collector free_hot
+  --channel wechat
 ```
 
-The collector maps all sources into `CandidateContent`, then reuses the existing scoring, drafting, formatting, cover, and WeChat draft submission workflow.
+If Baidu returns no usable result for a niche keyword, the workflow falls back to keyword-seed topics so the user can still generate a preview instead of hitting an empty-candidate error.
 
 ## Web Workbench
 

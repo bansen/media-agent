@@ -25,7 +25,7 @@ from .auth import (
     WeChatOAuthProvider,
     parse_wechat_component_event,
 )
-from .collectors.free_hot import collect_free_hot_candidates
+from .collectors.baidu_search import collect_baidu_search_candidates
 from .config import AgentConfig
 from .cover_generation import generate_cover_image
 from .database import (
@@ -39,13 +39,13 @@ from .database import (
 )
 from .formatters.wechat_gzh import format_wechat_markdown, write_gzh_outputs
 from .generation import generate_llm_drafts
-from .mock_data import get_mock_candidates
+from .keyword_seed import build_keyword_seed_candidates
 from .models import TopicBrief, TopicScore, WorkflowResult
 from .wechat_publish import publish_wechat_draft
 from .workflow import run_keyword_workflow
 
 
-CollectorName = Literal["mock", "free_hot"]
+CollectorName = Literal["baidu_search"]
 ChannelName = Literal["wechat", "xiaohongshu"]
 JobStatus = Literal["queued", "running", "completed", "preview_ready", "publishing", "published_draft", "failed", "archived"]
 
@@ -54,7 +54,7 @@ JobStatus = Literal["queued", "running", "completed", "preview_ready", "publishi
 class WebRunOptions:
     keyword: str
     channel: ChannelName = "wechat"
-    collector: CollectorName = "free_hot"
+    collector: CollectorName = "baidu_search"
     use_llm: bool = False
     format_gzh: bool = True
     generate_cover: bool = False
@@ -280,7 +280,7 @@ def _options_from_json(payload: dict | None) -> WebRunOptions:
     return WebRunOptions(
         keyword=str(payload.get("keyword", "")),
         channel=payload.get("channel", "wechat"),
-        collector=payload.get("collector", "free_hot"),
+        collector=payload.get("collector", "baidu_search"),
         use_llm=bool(payload.get("use_llm", False)),
         format_gzh=bool(payload.get("format_gzh", True)),
         generate_cover=bool(payload.get("generate_cover", False)),
@@ -383,6 +383,9 @@ def run_agent_workflow(options: WebRunOptions, progress: Callable[[str], None] |
     emit(f"Collecting candidates with {options.collector}")
     candidates = _collect_candidates(options)
     emit(f"Collected {len(candidates)} candidates")
+    if not candidates and options.collector == "baidu_search":
+        emit("Baidu search returned no candidates; using keyword seed topics")
+        candidates = build_keyword_seed_candidates(options.keyword, options.channel)
     emit("Scoring and building channel outputs")
     result = run_keyword_workflow(options.keyword, candidates=candidates, primary_channel=options.channel)
     payload = _to_jsonable(result)
@@ -553,7 +556,7 @@ class ContentAgentHandler(BaseHTTPRequestHandler):
             self._send_json(
                 {
                     "config": AgentConfig.from_env_file().redacted_status(),
-                    "collectors": ["mock", "free_hot"],
+                    "collectors": ["baidu_search"],
                     "channels": ["wechat", "xiaohongshu"],
                 }
             )
@@ -949,7 +952,7 @@ def _options_from_payload(payload: dict) -> WebRunOptions:
     return WebRunOptions(
         keyword=str(payload.get("keyword", "")).strip(),
         channel=payload.get("channel", "wechat"),
-        collector=payload.get("collector", "free_hot"),
+        collector=payload.get("collector", "baidu_search"),
         use_llm=bool(payload.get("use_llm", False)),
         format_gzh=bool(payload.get("format_gzh", True)),
         generate_cover=bool(payload.get("generate_cover", False)),
@@ -965,19 +968,17 @@ def _validate_options(options: WebRunOptions) -> None:
         raise ValueError("keyword cannot be empty")
     if options.channel not in {"wechat", "xiaohongshu"}:
         raise ValueError("channel must be wechat or xiaohongshu")
-    if options.collector not in {"mock", "free_hot"}:
-        raise ValueError("collector must be mock or free_hot")
+    if options.collector != "baidu_search":
+        raise ValueError("collector must be baidu_search")
     if options.submit_wechat_draft and not options.wechat_cover_image and not options.generate_cover:
         raise ValueError("wechat_cover_image is required when submitting without generating a cover")
 
 
 def _collect_candidates(options: WebRunOptions):
-    if options.collector == "mock":
-        return get_mock_candidates(options.keyword, channel=options.channel)
     config = AgentConfig.from_env_file()
-    if options.collector == "free_hot":
-        return collect_free_hot_candidates(options.keyword, config=config.build_free_hot_config())
-    raise ValueError("collector must be mock or free_hot")
+    if options.collector == "baidu_search":
+        return collect_baidu_search_candidates(options.keyword, api_key=config.baidu_search_api_key)
+    raise ValueError("collector must be baidu_search")
 
 
 def _to_jsonable(value):
@@ -1624,8 +1625,7 @@ INDEX_HTML = r"""<!doctype html>
 
         <label for="collector">数据源</label>
         <select id="collector" name="collector">
-          <option value="free_hot" selected>free_hot 关键词免费源</option>
-          <option value="mock">mock 本地样例</option>
+          <option value="baidu_search" selected>百度搜索 前10篇非广告</option>
         </select>
 
         <label class="check"><input id="useLlm" type="checkbox">生成内容</label>

@@ -24,6 +24,7 @@ class AgentConfig:
     wechat_access_token: str
     free_hot_sources: list[str]
     database_url: str
+    baidu_search_api_key: str = ""
     wechat_component_app_id: str = ""
     wechat_component_app_secret: str = ""
     wechat_component_token: str = ""
@@ -54,6 +55,7 @@ class AgentConfig:
             wechat_access_token=values.get("WECHAT_ACCESS_TOKEN", ""),
             free_hot_sources=_parse_csv(values.get("FREE_HOT_SOURCES", "google_news_rss,hn,github")),
             database_url=values.get("DATABASE_URL", ""),
+            baidu_search_api_key=values.get("BAIDU_SEARCH_API_KEY", ""),
             wechat_component_app_id=values.get("WECHAT_COMPONENT_APP_ID", ""),
             wechat_component_app_secret=values.get("WECHAT_COMPONENT_APP_SECRET", ""),
             wechat_component_token=values.get("WECHAT_COMPONENT_TOKEN", ""),
@@ -82,8 +84,8 @@ class AgentConfig:
             "WECHAT_COMPONENT_AUTH_REDIRECT_URI": "SET" if self.wechat_component_auth_redirect_uri else "EMPTY",
             "WECHAT_COMPONENT_VERIFY_TICKET": "SET" if self.wechat_component_verify_ticket else "EMPTY",
             "WECHAT_COMPONENT_ACCESS_TOKEN": "SET" if self.wechat_component_access_token else "EMPTY",
-            "FREE_HOT_SOURCES": ",".join(self.free_hot_sources) if self.free_hot_sources else "EMPTY",
             "DATABASE_URL": "SET" if self.database_url else "EMPTY",
+            "BAIDU_SEARCH_API_KEY": "SET" if self.baidu_search_api_key else "EMPTY",
         }
 
     def build_llm_provider(self) -> OpenAICompatibleLLMProvider:

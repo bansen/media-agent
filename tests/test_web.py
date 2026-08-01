@@ -24,7 +24,9 @@ class WebTests(unittest.TestCase):
         html = render_index_html()
 
         self.assertIn('id="keyword"', html)
-        self.assertIn('value="free_hot"', html)
+        self.assertIn('value="baidu_search"', html)
+        self.assertNotIn('value="free_hot"', html)
+        self.assertNotIn('value="mock"', html)
         self.assertNotIn('value="public_search"', html)
         self.assertNotIn("public_search API", html)
         self.assertIn('id="useLlm"', html)
@@ -89,12 +91,12 @@ class WebTests(unittest.TestCase):
         )
         events = []
 
-        with patch("content_agent.web.collect_free_hot_candidates", return_value=[candidate]):
+        with patch("content_agent.web.collect_baidu_search_candidates", return_value=[candidate]):
             payload = run_agent_workflow(
                 WebRunOptions(
                     keyword="AI副业",
                     channel="wechat",
-                    collector="free_hot",
+                    collector="baidu_search",
                     use_llm=False,
                     format_gzh=False,
                     generate_cover=False,
@@ -106,11 +108,68 @@ class WebTests(unittest.TestCase):
 
         self.assertEqual(payload["keyword"], "AI副业")
         self.assertEqual(payload["topics"][0]["title"], "真实热榜里的 AI 副业趋势")
-        self.assertIn("Collecting candidates with free_hot", events)
+        self.assertIn("Collecting candidates with baidu_search", events)
         self.assertIn("Scoring and building channel outputs", events)
 
+    def test_run_agent_workflow_falls_back_to_keyword_seed_when_baidu_search_is_empty(self):
+        events = []
+
+        with patch("content_agent.web.collect_baidu_search_candidates", return_value=[]):
+            payload = run_agent_workflow(
+                WebRunOptions(
+                    keyword="codex制作出海网站",
+                    channel="wechat",
+                    collector="baidu_search",
+                    use_llm=False,
+                    format_gzh=False,
+                    generate_cover=False,
+                    submit_wechat_draft=False,
+                    output_dir=Path("output"),
+                ),
+                progress=events.append,
+            )
+
+        self.assertEqual(payload["keyword"], "codex制作出海网站")
+        self.assertGreaterEqual(len(payload["topics"]), 1)
+        self.assertIn("codex制作出海网站", payload["topics"][0]["title"])
+        self.assertEqual(payload["topics"][0]["source"], "keyword_seed")
+        self.assertIn("Baidu search returned no candidates; using keyword seed topics", events)
+
+    def test_run_agent_workflow_can_use_baidu_search_collector(self):
+        candidate = CandidateContent(
+            title="Codex 制作出海网站的 5 个关键步骤",
+            source="baidu_search",
+            url="https://example.com/codex-site",
+            heat=84,
+            interaction=76,
+            hook=86,
+            pain=80,
+            reuse=88,
+            material=78,
+        )
+        events = []
+
+        with patch("content_agent.web.collect_baidu_search_candidates", return_value=[candidate]):
+            payload = run_agent_workflow(
+                WebRunOptions(
+                    keyword="codex制作出海网站",
+                    channel="wechat",
+                    collector="baidu_search",
+                    use_llm=False,
+                    format_gzh=False,
+                    generate_cover=False,
+                    submit_wechat_draft=False,
+                    output_dir=Path("output"),
+                ),
+                progress=events.append,
+            )
+
+        self.assertEqual(payload["topics"][0]["source"], "baidu_search")
+        self.assertIn("Codex 制作出海网站", payload["topics"][0]["title"])
+        self.assertIn("Collecting candidates with baidu_search", events)
+
     def test_web_rejects_paid_public_search_collector(self):
-        with self.assertRaisesRegex(ValueError, "collector must be mock or free_hot"):
+        with self.assertRaisesRegex(ValueError, "collector must be baidu_search"):
             run_agent_workflow(WebRunOptions(keyword="AI副业", channel="wechat", collector="public_search"))
 
     def test_run_agent_workflow_can_format_gzh_preview(self):
@@ -127,12 +186,12 @@ class WebTests(unittest.TestCase):
         )
         events = []
 
-        with patch("content_agent.web.get_mock_candidates", return_value=[candidate]):
+        with patch("content_agent.web.collect_baidu_search_candidates", return_value=[candidate]):
             payload = run_agent_workflow(
                 WebRunOptions(
                     keyword="AI副业",
                     channel="wechat",
-                    collector="mock",
+                    collector="baidu_search",
                     use_llm=False,
                     format_gzh=True,
                     generate_cover=False,
@@ -158,12 +217,12 @@ class WebTests(unittest.TestCase):
             material=75,
         )
 
-        with patch("content_agent.web.get_mock_candidates", return_value=[candidate]):
+        with patch("content_agent.web.collect_baidu_search_candidates", return_value=[candidate]):
             payload = run_agent_workflow(
                 WebRunOptions(
                     keyword="AI副业",
                     channel="wechat",
-                    collector="mock",
+                    collector="baidu_search",
                     use_llm=False,
                     format_gzh=False,
                     generate_cover=False,

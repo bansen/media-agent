@@ -124,7 +124,7 @@ class ProviderCliTests(unittest.TestCase):
     def test_cli_prints_json_workflow_result(self):
         stdout = io.StringIO()
 
-        with redirect_stdout(stdout):
+        with redirect_stdout(stdout), patch("content_agent.cli.collect_baidu_search_candidates", return_value=[_baidu_candidate()]):
             exit_code = main(["--keyword", "AI副业"])
 
         payload = json.loads(stdout.getvalue())
@@ -133,41 +133,32 @@ class ProviderCliTests(unittest.TestCase):
         self.assertGreaterEqual(len(payload["topics"]), 1)
         self.assertIn("cover_prompt", payload)
 
-    def test_cli_rejects_paid_public_search_collector(self):
+    def test_cli_rejects_non_baidu_search_collector(self):
         with self.assertRaises(SystemExit) as raised:
-            main(["--keyword", "AI副业", "--collector", "public_search"])
+            main(["--keyword", "AI副业", "--collector", "free_hot"])
 
         self.assertEqual(raised.exception.code, 2)
 
-    def test_cli_can_use_free_hot_collector(self):
+    def test_cli_can_use_baidu_search_collector(self):
         stdout = io.StringIO()
-        free_candidate = CandidateContent(
-            title="免费热榜里的 AI 副业趋势",
-            source="google_news_rss",
-            url="https://example.com/free-hot",
-            heat=88,
-            interaction=82,
-            hook=80,
-            pain=78,
-            reuse=76,
-            material=75,
-        )
 
         with redirect_stdout(stdout), patch(
-            "content_agent.cli.collect_free_hot_candidates",
-            return_value=[free_candidate],
+            "content_agent.cli.collect_baidu_search_candidates",
+            return_value=[_baidu_candidate()],
         ) as collect:
-            exit_code = main(["--keyword", "AI副业", "--collector", "free_hot"])
+            exit_code = main(["--keyword", "AI副业"])
 
         payload = json.loads(stdout.getvalue())
         self.assertEqual(exit_code, 0)
-        self.assertEqual(payload["topics"][0]["title"], "免费热榜里的 AI 副业趋势")
+        self.assertEqual(payload["topics"][0]["title"], "百度搜索里的 AI 副业趋势")
         collect.assert_called_once()
 
     def test_cli_formats_gzh_preview_without_llm(self):
         stdout = io.StringIO()
         with tempfile.TemporaryDirectory() as tmpdir:
-            with redirect_stdout(stdout):
+            with redirect_stdout(stdout), patch(
+                "content_agent.cli.collect_baidu_search_candidates", return_value=[_baidu_candidate()]
+            ):
                 exit_code = main(
                     [
                         "--keyword",
@@ -211,6 +202,8 @@ class ProviderCliTests(unittest.TestCase):
         stderr = io.StringIO()
 
         with tempfile.TemporaryDirectory() as tmpdir, redirect_stdout(stdout), patch("sys.stderr", stderr), patch(
+            "content_agent.cli.collect_baidu_search_candidates", return_value=[_baidu_candidate()]
+        ), patch(
             "content_agent.cli.generate_cover_image",
             return_value=FakeGeneratedCover(
                 path=Path(tmpdir) / "generated-cover.jpg",
@@ -242,6 +235,8 @@ class ProviderCliTests(unittest.TestCase):
         stderr = io.StringIO()
 
         with tempfile.TemporaryDirectory() as tmpdir, redirect_stdout(stdout), patch("sys.stderr", stderr), patch(
+            "content_agent.cli.collect_baidu_search_candidates", return_value=[_baidu_candidate()]
+        ), patch(
             "content_agent.cli.generate_cover_image",
             return_value=FakeGeneratedCover(
                 path=Path(tmpdir) / "generated-cover.jpg",
@@ -281,6 +276,8 @@ class ProviderCliTests(unittest.TestCase):
             cover_image.write_bytes(b"fake-image")
 
             with redirect_stdout(stdout), patch("sys.stderr", stderr), patch(
+                "content_agent.cli.collect_baidu_search_candidates", return_value=[_baidu_candidate()]
+            ), patch(
                 "content_agent.cli.generate_cover_image"
             ) as generate_cover, patch("content_agent.cli.format_wechat_markdown") as format_markdown, patch(
                 "content_agent.cli.publish_wechat_draft"
@@ -308,6 +305,20 @@ class ProviderCliTests(unittest.TestCase):
         format_markdown.assert_not_called()
         publish.assert_called_once()
         self.assertEqual(publish.call_args.kwargs["content_html"], "<section>已经排版好的正文</section>")
+
+
+def _baidu_candidate() -> CandidateContent:
+    return CandidateContent(
+        title="百度搜索里的 AI 副业趋势",
+        source="baidu_search",
+        url="https://example.com/baidu",
+        heat=88,
+        interaction=82,
+        hook=80,
+        pain=78,
+        reuse=76,
+        material=75,
+    )
 
 
 if __name__ == "__main__":

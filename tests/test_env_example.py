@@ -20,11 +20,12 @@ class EnvExampleTests(unittest.TestCase):
         self.assertNotIn("PUBLIC_SEARCH_PROVIDER", env_example)
         self.assertNotIn("BING_SEARCH_API_KEY", env_example)
         self.assertNotIn("NEWSAPI_API_KEY", env_example)
+        self.assertIn("BAIDU_SEARCH_API_KEY=", env_example)
 
-    def test_only_keyword_search_free_hot_sources_are_documented(self):
+    def test_old_free_hot_sources_are_not_documented(self):
         env_example = pathlib.Path(".env.example").read_text(encoding="utf-8")
 
-        self.assertIn("FREE_HOT_SOURCES=google_news_rss,hn,github", env_example)
+        self.assertNotIn("FREE_HOT_SOURCES", env_example)
         self.assertNotIn("RSSHUB_BASE_URL", env_example)
         self.assertNotIn("DAILYHOT_BASE_URL", env_example)
 

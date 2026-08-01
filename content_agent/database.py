@@ -102,7 +102,7 @@ class ContentJobRow(Base):
     wechat_account_id: Mapped[int | None] = mapped_column(ForeignKey("wechat_accounts.id"), nullable=True)
     keyword: Mapped[str] = mapped_column(String(200), default="")
     channel: Mapped[str] = mapped_column(String(40), default="wechat")
-    collector: Mapped[str] = mapped_column(String(40), default="free_hot")
+    collector: Mapped[str] = mapped_column(String(40), default="baidu_search")
     status: Mapped[str] = mapped_column(String(40), default="queued")
     options_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     result_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
