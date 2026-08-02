@@ -15,6 +15,7 @@ from content_agent.web import (
     render_landing_html,
     render_trial_html,
     run_agent_workflow,
+    submit_stored_previewed_wechat_draft,
     submit_previewed_wechat_draft,
 )
 
@@ -293,6 +294,48 @@ class WebTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "completed preview"):
             submit_previewed_wechat_draft(job)
+
+    def test_submit_stored_previewed_wechat_draft_uses_snapshot_before_publishing_status(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = JobStore(database_url=f"sqlite:///{Path(tmpdir) / 'web.db'}", auto_start=False)
+            clean_html = Path(tmpdir) / "preview.html"
+            clean_html.write_text("<p>已预览内容</p>", encoding="utf-8")
+            cover_image = Path(tmpdir) / "cover.jpg"
+            cover_image.write_bytes(b"fake-image")
+            job = store.create(WebRunOptions(keyword="AI副业"), user_id=1)
+            result_payload = {
+                "keyword": "AI副业",
+                "expanded_keywords": ["AI副业"],
+                "topics": [
+                    {
+                        "title": "来源标题",
+                        "optimized_title": "普通人做 AI 副业，先看懂这 3 个真实信号",
+                        "score": {"total": 81.1, "level": "A", "reasons": []},
+                        "source": "baidu_search",
+                        "url": "https://example.com/topic",
+                        "platform_fit": ["wechat"],
+                        "angle": "普通人视角",
+                        "material_needs": ["案例"],
+                        "risk_notes": ["避免承诺收益"],
+                    }
+                ],
+                "wechat_outline": "公众号文章：《普通人做 AI 副业，先看懂这 3 个真实信号》",
+                "xhs_package": "小红书标题：普通人做 AI 副业，先看懂这 3 个真实信号",
+                "cover_prompt": "Replicate image prompt",
+                "gzh_formatting": {"clean_html": str(clean_html), "preview_html": str(clean_html)},
+                "cover_image": {"path": str(cover_image), "url": "", "model": "mock", "prompt": "mock"},
+            }
+            store._update(job.id, status="preview_ready", result=result_payload, event="Job completed")
+
+            with patch("content_agent.web.publish_wechat_draft") as publish:
+                publish.return_value.thumb_media_id = "MEDIA_ID"
+                publish.return_value.response = {"errcode": 0, "media_id": "DRAFT_ID"}
+                submitted = submit_stored_previewed_wechat_draft(store, job.id, config=object())
+
+        self.assertEqual(submitted.status, "published_draft")
+        self.assertEqual(submitted.result["wechat_draft"]["thumb_media_id"], "MEDIA_ID")
+        self.assertIn("WeChat draft submission started", submitted.events)
+        self.assertIn("WeChat draft submission completed", submitted.events)
 
     def test_wechat_publish_config_prefers_component_authorized_account(self):
         with tempfile.TemporaryDirectory() as tmpdir:

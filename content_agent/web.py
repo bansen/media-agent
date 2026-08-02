@@ -493,6 +493,51 @@ def submit_previewed_wechat_draft(
     return result_payload
 
 
+def submit_stored_previewed_wechat_draft(
+    store: JobStore,
+    job_id: str,
+    config: AgentConfig,
+) -> WebJob:
+    job = store.get(job_id)
+    if job is None:
+        raise KeyError(job_id)
+    preview_job = replace(
+        job,
+        events=list(job.events),
+        result=dict(job.result) if job.result else None,
+        publish_attempts=list(job.publish_attempts),
+    )
+    try:
+        store._update(job_id, status="publishing", event="WeChat draft submission started")
+        result = submit_previewed_wechat_draft(
+            preview_job,
+            progress=lambda message: store._update(job_id, event=message),
+            config=config,
+        )
+        store._update(job_id, status="published_draft", result=result, event="WeChat draft submission completed")
+        store.record_publish_attempt(
+            job_id,
+            platform="wechat",
+            status="published_draft",
+            response=result.get("wechat_draft", {}).get("response", {}),
+            error="",
+        )
+        submitted = store.get(job_id)
+        if submitted is None:
+            raise KeyError(job_id)
+        return submitted
+    except Exception as exc:
+        store._update(job_id, status="failed", error=str(exc), event=f"WeChat draft submission failed: {exc}")
+        store.record_publish_attempt(
+            job_id,
+            platform="wechat",
+            status="failed",
+            response={},
+            error=str(exc),
+        )
+        raise
+
+
 def render_index_html() -> str:
     return INDEX_HTML
 
@@ -607,30 +652,13 @@ class ContentAgentHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "job not found"}, status=HTTPStatus.NOT_FOUND)
                 return
             try:
-                self.store._update(job_id, status="publishing", event="WeChat draft submission started")
-                result = submit_previewed_wechat_draft(
-                    job,
-                    progress=lambda message: self.store._update(job_id, event=message),
+                submitted = submit_stored_previewed_wechat_draft(
+                    self.store,
+                    job_id,
                     config=self._wechat_publish_config_for_user(user["id"]),
                 )
-                self.store._update(job_id, status="published_draft", result=result, event="WeChat draft submission completed")
-                self.store.record_publish_attempt(
-                    job_id,
-                    platform="wechat",
-                    status="published_draft",
-                    response=result.get("wechat_draft", {}).get("response", {}),
-                    error="",
-                )
-                self._send_json(self.store.get(job_id).to_dict())
+                self._send_json(submitted.to_dict())
             except Exception as exc:
-                self.store._update(job_id, status="failed", error=str(exc), event=f"WeChat draft submission failed: {exc}")
-                self.store.record_publish_attempt(
-                    job_id,
-                    platform="wechat",
-                    status="failed",
-                    response={},
-                    error=str(exc),
-                )
                 self._send_json({"error": str(exc), "job": self.store.get(job_id).to_dict()}, status=HTTPStatus.BAD_REQUEST)
             return
         if parsed.path != "/api/jobs":
