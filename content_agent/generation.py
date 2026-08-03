@@ -47,6 +47,10 @@ def _wechat_prompt(result: WorkflowResult) -> str:
                 f"正文需要解释素材《{topic.title}》与读者的关系；"
                 "禁止泛化成 AI 学习、副业赚钱等无关主题。"
             ),
+            (
+                "输出格式：只输出 Markdown 正文，第一行必须是 # 标题；"
+                "不要输出任何解释、确认语、分隔线、标题：、正文：、可复制到草稿箱等说明文字。"
+            ),
             "要求：标题克制但有点击欲；正文 1200-1800 字；使用小标题；禁止承诺收益；不要承诺日更或固定更新频率。",
         ]
     )
@@ -67,7 +71,38 @@ def _force_markdown_title(markdown: str, title: str) -> str:
     if not clean_title:
         return markdown
     forced_heading = f"# {clean_title}"
-    stripped = markdown.lstrip()
+    stripped = _strip_wechat_article_noise(markdown)
     if re.match(r"^#\s+", stripped):
         return re.sub(r"^#\s+.*(?:\n|$)", forced_heading + "\n", stripped, count=1)
     return f"{forced_heading}\n\n{stripped}"
+
+
+def _strip_wechat_article_noise(markdown: str) -> str:
+    stripped = markdown.strip()
+    stripped = re.sub(r"^```(?:markdown)?\s*", "", stripped, flags=re.IGNORECASE)
+    stripped = re.sub(r"\s*```$", "", stripped)
+
+    body_lines: list[str] = []
+    skipping_prefix = True
+    for line in stripped.splitlines():
+        clean_line = line.strip()
+        if skipping_prefix:
+            if not clean_line or clean_line in {"---", "----", "——"}:
+                continue
+            if _is_assistant_preamble(clean_line):
+                continue
+            if re.match(r"^(?:标题|文章标题|公众号标题|正文)\s*[:：]", clean_line):
+                continue
+            if re.match(r"^#\s+", clean_line):
+                continue
+            skipping_prefix = False
+        body_lines.append(line)
+
+    return "\n".join(body_lines).strip()
+
+
+def _is_assistant_preamble(line: str) -> bool:
+    return bool(
+        re.match(r"^(好的|当然|可以|以下是|这是|下面是)", line)
+        and any(term in line for term in ["公众号文章", "准备", "按照要求", "草稿箱", "复制"])
+    )

@@ -125,6 +125,28 @@ class TitleOptimizerTests(unittest.TestCase):
         self.assertNotIn("普通人学 AI", optimized_title)
         self.assertIn(f"公众号文章：《{optimized_title}》", result.wechat_outline)
 
+    def test_wechat_model_release_keyword_uses_source_entity_not_raw_search_phrase(self):
+        candidates = [
+            CandidateContent(
+                title="MiniMax H3正式发布",
+                source="baidu_search",
+                url="https://example.com/minimax-h3",
+                heat=72,
+                interaction=70,
+                hook=82,
+                pain=76,
+                reuse=80,
+                material=78,
+            )
+        ]
+
+        result = run_keyword_workflow("minimax h3介绍", candidates=candidates, primary_channel="wechat")
+        optimized_title = result.topics[0].optimized_title
+
+        self.assertIn("MiniMax H3", optimized_title)
+        self.assertNotIn("minimax h3介绍", optimized_title)
+        self.assertTrue(any(term in optimized_title for term in ["发布", "变化", "看懂"]))
+
 
 if __name__ == "__main__":
     unittest.main()

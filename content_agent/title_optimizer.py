@@ -53,6 +53,9 @@ def _optimize_ai_side_hustle_title(title: str) -> str:
 
 
 def _optimize_keyword_title(title: str, keyword: str) -> str:
+    model_entity = _model_entity_from_source_title(title)
+    if model_entity and _contains_any(title, ["发布", "上线", "更新", "模型"]):
+        return f"{model_entity}有新变化，普通人先看懂这 3 点"
     if keyword in title and 10 <= len(title) <= 30 and not _contains_any(title, FORBIDDEN_TITLE_TERMS):
         return title
     if _contains_any(title, ["架构", "系统", "平台", "工程", "数据", "项目", "技术"]):
@@ -114,3 +117,13 @@ def _looks_like_ai_focus(text: str) -> bool:
 
 def _contains_any(text: str, terms: list[str]) -> bool:
     return any(term in text for term in terms)
+
+
+def _model_entity_from_source_title(title: str) -> str:
+    match = re.match(r"([A-Za-z][A-Za-z0-9]*(?:\s+[A-Za-z0-9]+){0,3})", title.strip())
+    if not match:
+        return ""
+    entity = re.sub(r"\s+", " ", match.group(1)).strip()
+    if len(entity) < 3 or not re.search(r"\d|[A-Z]", entity):
+        return ""
+    return entity

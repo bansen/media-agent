@@ -73,6 +73,28 @@ class GenerationTests(unittest.TestCase):
         self.assertTrue(drafts["wechat_article"].startswith(f"# {result.topics[0].optimized_title}"))
         self.assertNotIn("# 别急着学AI", drafts["wechat_article"])
 
+    def test_wechat_article_strips_assistant_preamble_and_title_labels(self):
+        result = run_keyword_workflow(
+            "minimax h3介绍",
+            self.minimax_candidates(),
+        )
+        llm = FakeLLMProvider(
+            "好的，这是为您准备的公众号文章，已按照要求完成，可直接复制进入草稿箱。\n\n"
+            "---\n\n"
+            "标题：minimax h3介绍有新变化，普通人先看懂这 3 点\n\n"
+            "最近，MiniMax H3 的发布让不少人开始重新评估国产模型能力。\n\n"
+            "## MiniMax H3 到底变在哪\n\n"
+            "正文内容。"
+        )
+
+        drafts = generate_llm_drafts(result, llm)
+
+        self.assertTrue(drafts["wechat_article"].startswith(f"# {result.topics[0].optimized_title}"))
+        self.assertNotIn("好的，这是", drafts["wechat_article"])
+        self.assertNotIn("可直接复制进入草稿箱", drafts["wechat_article"])
+        self.assertNotIn("标题：", drafts["wechat_article"])
+        self.assertIn("最近，MiniMax H3", drafts["wechat_article"])
+
     def test_reports_progress_before_each_llm_call(self):
         result = run_keyword_workflow("AI副业", get_mock_candidates("AI副业", channel="wechat"))
         llm = FakeLLMProvider()

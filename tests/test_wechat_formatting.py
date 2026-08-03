@@ -66,6 +66,12 @@ class WeChatGzhFormattingTests(unittest.TestCase):
         self.assertIn("别再问“AI能干嘛”了，", html)
         self.assertIn("MiniMax H3的新模型", html)
 
+    def test_cover_label_matches_model_topic(self):
+        html = format_wechat_markdown("# MiniMax H3有新变化，普通人先看懂这 3 点\n\n## 第一节\n\n正文内容。")
+
+        self.assertIn("AI 模型观察", html)
+        self.assertNotIn("AI 副业学习分享", html)
+
     def test_accepts_multiple_named_themes(self):
         markdown = "# 标题\n\n## 第一节\n\n正文内容。"
 

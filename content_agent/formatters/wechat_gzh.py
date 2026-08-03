@@ -199,6 +199,7 @@ def _container_start() -> str:
 
 def _cover(title: str) -> str:
     first, second = _split_title(title)
+    cover_label = _cover_label(title)
     return f"""
 <section style="margin:0 0 32px;background:#fff;border:1.5px solid rgba(5,150,105,0.15);border-radius:20px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.06);width:100%;">
   <section style="padding:32px 28px 28px;">
@@ -228,7 +229,7 @@ def _cover(title: str) -> str:
   </section>
   <section style="background:linear-gradient(135deg,#059669,#10B981);padding:12px 28px;display:flex;align-items:center;justify-content:space-between;">
     <p style="font-size:12px;color:rgba(255,255,255,0.9);margin:0;font-weight:600;letter-spacing:0.5px;">
-      <span leaf="">AI 副业学习分享</span>
+      <span leaf="">{_text(cover_label)}</span>
     </p>
     <section style="display:flex;gap:4px;">
       <span style="background:rgba(255,255,255,0.2);padding:1px 6px;border-radius:3px;font-size:8px;color:#fff;font-weight:600;"><span leaf="">AI</span></span>
@@ -446,6 +447,22 @@ def _split_title(title: str) -> tuple[str, str]:
     if len(clean) <= 12:
         return clean, "方法拆解"
     return clean[:12], clean[12:] or "方法拆解"
+
+
+def _cover_label(title: str) -> str:
+    if _contains_any(title, ["MiniMax", "DeepSeek", "GPT", "Claude", "H3", "大模型", "模型"]):
+        return "AI 模型观察"
+    if _contains_any(title, ["工具", "提示词", "教程", "场景"]):
+        return "AI 工具实战"
+    if _contains_any(title, ["副业", "接单", "变现", "赚钱"]):
+        return "AI 副业实践"
+    if _contains_any(title, ["养生", "健康", "久坐", "睡前"]):
+        return "健康生活清单"
+    return "AI 实用观察"
+
+
+def _contains_any(text: str, terms: list[str]) -> bool:
+    return any(term in text for term in terms)
 
 
 def _english_label(title: str) -> str:
