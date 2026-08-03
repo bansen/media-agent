@@ -53,6 +53,7 @@ class CoverGenerationTests(unittest.TestCase):
             self.assertEqual(cover.url, "https://replicate.delivery/mock/output.jpg")
             self.assertEqual(runner.calls[0][0], "black-forest-labs/flux-1.1-pro")
             self.assertTrue(runner.calls[0][1]["prompt_upsampling"])
+            self.assertEqual(runner.calls[0][1]["aspect_ratio"], "16:9")
 
     def test_sets_replicate_token_for_sdk_without_printing_it(self):
         runner = FakeReplicateRunner()

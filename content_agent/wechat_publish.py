@@ -55,7 +55,7 @@ def prepare_wechat_thumb_image(image_path: str | Path, max_bytes: int = 64 * 102
 
     output_path = path.with_name(f"{path.stem}_wechat_thumb.jpg")
     with Image.open(path) as image:
-        image.thumbnail((900, 383), Image.Resampling.LANCZOS)
+        image.thumbnail((900, 506), Image.Resampling.LANCZOS)
         rgb_image = image.convert("RGB")
         quality = 92
         while True:

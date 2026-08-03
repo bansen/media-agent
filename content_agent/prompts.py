@@ -57,7 +57,7 @@ def apply_cover_style(base_style: str, cover_style: str = "business-tech") -> st
 
 def _cover_style_for(topic: TopicBrief, channel: str) -> str:
     title = f"{topic.title} {topic.optimized_title} {topic.angle}"
-    ratio = "4:5 vertical social cover" if channel == "xiaohongshu" else "2.35:1 wide editorial cover"
+    ratio = "4:5 vertical social cover" if channel == "xiaohongshu" else "16:9 wide cover"
 
     if _contains_any(title, ["久坐", "办公室", "肩颈", "腰背"]):
         return (

@@ -89,6 +89,7 @@ def generate_cover_image(
         input={
             "prompt": clean_prompt,
             "prompt_upsampling": True,
+            "aspect_ratio": "16:9",
         },
     )
     file_output = output[0] if isinstance(output, list) else output

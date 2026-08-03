@@ -73,6 +73,22 @@ class WeChatDraftPublishTests(unittest.TestCase):
             self.assertLessEqual(thumb.stat().st_size, 64 * 1024)
             self.assertEqual(thumb.read_bytes()[:2], b"\xff\xd8")
 
+    def test_wechat_thumb_preserves_sixteen_to_nine_cover_ratio(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cover = Path(tmpdir) / "cover.webp"
+            image = Image.new("RGB", (1600, 900), color=(28, 92, 78))
+            image.save(cover, format="WEBP")
+
+            thumb = prepare_wechat_thumb_image(cover)
+
+            with Image.open(thumb) as thumb_image:
+                width, height = thumb_image.size
+
+            self.assertGreaterEqual(width, 890)
+            self.assertLessEqual(width, 900)
+            self.assertLessEqual(height, 506)
+            self.assertAlmostEqual(width / height, 16 / 9, places=2)
+
     def test_publish_converts_webp_cover_before_upload(self):
         result = run_keyword_workflow("AI副业", get_mock_candidates("AI副业", channel="wechat"))
         config = AgentConfig(

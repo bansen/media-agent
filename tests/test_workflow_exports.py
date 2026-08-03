@@ -64,6 +64,8 @@ class WorkflowExportTests(unittest.TestCase):
         self.assertNotIn("empty space", prompt)
         self.assertIn("no blank white rectangle", prompt)
         self.assertIn("no poster board", prompt)
+        self.assertIn("16:9 wide cover", prompt)
+        self.assertNotIn("2.35:1", prompt)
 
     def test_wechat_cover_prompt_adapts_to_ai_side_hustle_risk_topic(self):
         candidates = [
