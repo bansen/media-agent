@@ -60,6 +60,19 @@ class WeChatGzhFormattingTests(unittest.TestCase):
         self.assertNotIn("每天分享一个 AI 副业避坑指南", html)
         self.assertIn("关注我，一起拆解 AI 工具、副业实践和普通人的学习路径", html)
 
+    def test_accepts_multiple_named_themes(self):
+        markdown = "# 标题\n\n## 第一节\n\n正文内容。"
+
+        green = format_wechat_markdown(markdown, theme="moyu-green")
+        blue = format_wechat_markdown(markdown, theme="tech-blue")
+        mono = format_wechat_markdown(markdown, theme="minimal-mono")
+        warm = format_wechat_markdown(markdown, theme="warm-card")
+
+        self.assertIn("#059669", green)
+        self.assertIn("#2563EB", blue)
+        self.assertIn("#111827", mono)
+        self.assertIn("#B45309", warm)
+
     def test_formatted_html_passes_gzh_skill_validator(self):
         html = format_wechat_markdown(
             """# AI学习不是报课
@@ -100,10 +113,11 @@ class WeChatGzhFormattingTests(unittest.TestCase):
         html = format_wechat_markdown("# 标题\n\n## 第一节\n\n正文内容。")
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            paths = write_gzh_outputs(html, Path(tmpdir), "demo")
+            paths = write_gzh_outputs(html, Path(tmpdir), "demo", theme="tech-blue")
 
             self.assertTrue(paths.clean_html.exists())
             self.assertTrue(paths.preview_html.exists())
+            self.assertIn("科技蓝(tech-blue)", paths.clean_html.name)
             self.assertIn("_预览.html", paths.preview_html.name)
 
 

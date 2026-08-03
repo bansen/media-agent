@@ -11,12 +11,15 @@ from content_agent.web import (
     JobStore,
     WebJob,
     WebRunOptions,
+    validate_step_prerequisites,
     render_index_html,
     render_landing_html,
     render_trial_html,
     run_agent_workflow,
     submit_stored_previewed_wechat_draft,
     submit_previewed_wechat_draft,
+    _options_from_json,
+    _options_to_json,
 )
 
 
@@ -32,10 +35,18 @@ class WebTests(unittest.TestCase):
         self.assertNotIn("public_search API", html)
         self.assertIn('id="useLlm"', html)
         self.assertIn('id="formatGzh"', html)
+        self.assertIn('id="formatTheme"', html)
+        self.assertIn('id="coverStyle"', html)
+        self.assertIn('data-step="materials"', html)
+        self.assertIn('data-step="content"', html)
+        self.assertIn('data-step="format"', html)
+        self.assertIn('data-step="cover"', html)
         self.assertIn('id="submitDraftButton"', html)
         self.assertIn('id="historyList"', html)
         self.assertIn("历史记录", html)
         self.assertIn("loadHistory", html)
+        self.assertIn("statusLabels", html)
+        self.assertIn("publishLabel", html)
         self.assertIn('href="/settings/wechat"', html)
         self.assertIn("公众号参数", html)
         self.assertIn('href="/auth/wechat-official/start"', html)
@@ -109,8 +120,8 @@ class WebTests(unittest.TestCase):
 
         self.assertEqual(payload["keyword"], "AI副业")
         self.assertEqual(payload["topics"][0]["title"], "真实热榜里的 AI 副业趋势")
-        self.assertIn("Collecting candidates with baidu_search", events)
-        self.assertIn("Scoring and building channel outputs", events)
+        self.assertIn("正在用百度搜索收集候选素材", events)
+        self.assertIn("正在评分并生成选题", events)
 
     def test_run_agent_workflow_falls_back_to_keyword_seed_when_baidu_search_is_empty(self):
         events = []
@@ -134,7 +145,7 @@ class WebTests(unittest.TestCase):
         self.assertGreaterEqual(len(payload["topics"]), 1)
         self.assertIn("codex制作出海网站", payload["topics"][0]["title"])
         self.assertEqual(payload["topics"][0]["source"], "keyword_seed")
-        self.assertIn("Baidu search returned no candidates; using keyword seed topics", events)
+        self.assertIn("百度搜索暂无结果，已改用关键词种子选题", events)
 
     def test_run_agent_workflow_can_use_baidu_search_collector(self):
         candidate = CandidateContent(
@@ -167,7 +178,7 @@ class WebTests(unittest.TestCase):
 
         self.assertEqual(payload["topics"][0]["source"], "baidu_search")
         self.assertIn("Codex 制作出海网站", payload["topics"][0]["title"])
-        self.assertIn("Collecting candidates with baidu_search", events)
+        self.assertIn("正在用百度搜索收集候选素材", events)
 
     def test_web_rejects_paid_public_search_collector(self):
         with self.assertRaisesRegex(ValueError, "collector must be baidu_search"):
@@ -203,7 +214,57 @@ class WebTests(unittest.TestCase):
             )
 
         self.assertIn("gzh_formatting", payload)
-        self.assertIn("Formatting WeChat article", events)
+        self.assertIn("正在进行公众号排版", events)
+
+    def test_web_run_options_persist_format_and_cover_styles(self):
+        options = WebRunOptions(
+            keyword="AI副业",
+            format_theme="tech-blue",
+            cover_style="real-photo",
+        )
+
+        stored = _options_from_json(_options_to_json(options))
+
+        self.assertEqual(stored.format_theme, "tech-blue")
+        self.assertEqual(stored.cover_style, "real-photo")
+
+    def test_run_agent_workflow_applies_selected_cover_style_once(self):
+        candidate = CandidateContent(
+            title="AI副业真实案例",
+            source="baidu_search",
+            url="https://example.com/topic",
+            heat=88,
+            interaction=82,
+            hook=80,
+            pain=78,
+            reuse=76,
+            material=75,
+        )
+
+        with patch("content_agent.web.collect_baidu_search_candidates", return_value=[candidate]):
+            payload = run_agent_workflow(
+                WebRunOptions(
+                    keyword="AI副业",
+                    channel="wechat",
+                    collector="baidu_search",
+                    cover_style="real-photo",
+                    format_gzh=False,
+                )
+            )
+
+        self.assertIn("realistic lifestyle photography", payload["cover_prompt"])
+        self.assertNotIn("business technology editorial photo", payload["cover_prompt"])
+
+    def test_step_prerequisites_block_missing_previous_steps(self):
+        with self.assertRaisesRegex(ValueError, "请先搜素材"):
+            validate_step_prerequisites("content", None)
+        with self.assertRaisesRegex(ValueError, "请先生成内容"):
+            validate_step_prerequisites("format", {"topics": [{}]})
+        with self.assertRaisesRegex(ValueError, "请先生成封面"):
+            validate_step_prerequisites(
+                "submit",
+                {"topics": [{}], "gzh_formatting": {"clean_html": "output/a.html"}},
+            )
 
     def test_run_agent_workflow_exposes_existing_cover_for_preview_submit(self):
         candidate = CandidateContent(
@@ -280,7 +341,7 @@ class WebTests(unittest.TestCase):
                 result = submit_previewed_wechat_draft(job, progress=events.append)
 
         self.assertEqual(result["wechat_draft"]["thumb_media_id"], "MEDIA_ID")
-        self.assertIn("Submitting WeChat draft from preview", events)
+        self.assertIn("正在从预览提交公众号草稿箱", events)
         self.assertEqual(publish.call_args.kwargs["content_html"], "<p>已预览内容</p>")
         self.assertEqual(publish.call_args.kwargs["cover_image_path"], str(cover_image))
 
@@ -334,8 +395,8 @@ class WebTests(unittest.TestCase):
 
         self.assertEqual(submitted.status, "published_draft")
         self.assertEqual(submitted.result["wechat_draft"]["thumb_media_id"], "MEDIA_ID")
-        self.assertIn("WeChat draft submission started", submitted.events)
-        self.assertIn("WeChat draft submission completed", submitted.events)
+        self.assertIn("开始提交草稿箱", submitted.events)
+        self.assertIn("草稿箱提交完成", submitted.events)
 
     def test_wechat_publish_config_prefers_component_authorized_account(self):
         with tempfile.TemporaryDirectory() as tmpdir:

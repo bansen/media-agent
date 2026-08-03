@@ -3,6 +3,14 @@ from __future__ import annotations
 from .models import TopicBrief
 
 
+COVER_STYLE_GUIDANCE = {
+    "business-tech": "full-bleed business technology editorial photo, sharp focus, high-resolution, clean modern lighting",
+    "real-photo": "realistic lifestyle photography, natural light, sharp focus, high-resolution, believable daily scene",
+    "minimal-illustration": "minimal editorial illustration, refined shapes, high-resolution, clean composition, soft depth",
+    "knowledge-card": "knowledge-sharing cover image, clear subject hierarchy, sharp focus, high-resolution, editorial composition",
+}
+
+
 def build_wechat_outline(topic: TopicBrief) -> str:
     return "\n".join(
         [
@@ -38,6 +46,13 @@ def build_cover_prompt(topic: TopicBrief, channel: str = "wechat") -> str:
         "No text, no blank white rectangle, no paper sheet, no poster board, no floating card, "
         "no money piles, no medical claims, no exaggerated symbols."
     )
+
+
+def apply_cover_style(base_style: str, cover_style: str = "business-tech") -> str:
+    selected = (cover_style or "business-tech").strip()
+    if selected not in COVER_STYLE_GUIDANCE:
+        raise ValueError(f"unsupported cover style: {cover_style}")
+    return f"{COVER_STYLE_GUIDANCE[selected]}, {base_style}"
 
 
 def _cover_style_for(topic: TopicBrief, channel: str) -> str:

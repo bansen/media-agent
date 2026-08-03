@@ -55,9 +55,9 @@ def prepare_wechat_thumb_image(image_path: str | Path, max_bytes: int = 64 * 102
 
     output_path = path.with_name(f"{path.stem}_wechat_thumb.jpg")
     with Image.open(path) as image:
-        image.thumbnail((900, 383))
+        image.thumbnail((900, 383), Image.Resampling.LANCZOS)
         rgb_image = image.convert("RGB")
-        quality = 88
+        quality = 92
         while True:
             rgb_image.save(output_path, format="JPEG", quality=quality, optimize=True, progressive=False)
             if output_path.stat().st_size <= max_bytes:
@@ -68,8 +68,8 @@ def prepare_wechat_thumb_image(image_path: str | Path, max_bytes: int = 64 * 102
             width, height = rgb_image.size
             if width <= 320 or height <= 180:
                 return output_path
-            rgb_image = rgb_image.resize((int(width * 0.85), int(height * 0.85)))
-            quality = 78
+            rgb_image = rgb_image.resize((int(width * 0.85), int(height * 0.85)), Image.Resampling.LANCZOS)
+            quality = 82
 
 
 def _is_jpeg(path: Path) -> bool:

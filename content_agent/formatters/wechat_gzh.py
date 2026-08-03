@@ -16,9 +16,47 @@ class GzhOutputPaths:
     preview_html: Path
 
 
+THEME_LABELS = {
+    "moyu-green": "摸鱼绿(moyu-green)",
+    "tech-blue": "科技蓝(tech-blue)",
+    "minimal-mono": "极简黑白(minimal-mono)",
+    "warm-card": "暖色知识卡(warm-card)",
+}
+
+THEME_PALETTES = {
+    "moyu-green": {},
+    "tech-blue": {
+        "#059669": "#2563EB",
+        "#10B981": "#38BDF8",
+        "#34D399": "#60A5FA",
+        "#BBF7D0": "#BFDBFE",
+        "#F0FDF4": "#EFF6FF",
+        "#A7F3D0": "#93C5FD",
+        "#FDE68A": "#DBEAFE",
+    },
+    "minimal-mono": {
+        "#059669": "#111827",
+        "#10B981": "#4B5563",
+        "#34D399": "#6B7280",
+        "#BBF7D0": "#D1D5DB",
+        "#F0FDF4": "#F9FAFB",
+        "#A7F3D0": "#9CA3AF",
+        "#FDE68A": "#E5E7EB",
+    },
+    "warm-card": {
+        "#059669": "#B45309",
+        "#10B981": "#F59E0B",
+        "#34D399": "#FBBF24",
+        "#BBF7D0": "#FED7AA",
+        "#F0FDF4": "#FFF7ED",
+        "#A7F3D0": "#FDBA74",
+        "#FDE68A": "#FEF3C7",
+    },
+}
+
+
 def format_wechat_markdown(markdown: str, theme: str = "moyu-green") -> str:
-    if theme != "moyu-green":
-        raise ValueError("Only the gzh-design moyu-green theme is implemented in the MVP adapter")
+    theme = normalize_theme(theme)
     document = _parse_markdown(_sanitize_publish_markdown(markdown))
     title = document["title"] or "公众号文章"
     sections = document["sections"] or [{"title": "正文", "blocks": document["intro_blocks"]}]
@@ -38,7 +76,24 @@ def format_wechat_markdown(markdown: str, theme: str = "moyu-green") -> str:
     parts.append(_signature())
     parts.append(_footer_cta())
     parts.append("</section>")
-    return "\n".join(part for part in parts if part)
+    return _apply_theme("\n".join(part for part in parts if part), theme)
+
+
+def normalize_theme(theme: str) -> str:
+    normalized = (theme or "moyu-green").strip()
+    if normalized not in THEME_LABELS:
+        raise ValueError(f"unsupported gzh theme: {theme}")
+    return normalized
+
+
+def theme_label(theme: str) -> str:
+    return THEME_LABELS[normalize_theme(theme)]
+
+
+def _apply_theme(html: str, theme: str) -> str:
+    for source, target in THEME_PALETTES[theme].items():
+        html = html.replace(source, target)
+    return html
 
 
 def _sanitize_publish_markdown(markdown: str) -> str:
@@ -52,10 +107,11 @@ def _sanitize_publish_markdown(markdown: str) -> str:
     return sanitized
 
 
-def write_gzh_outputs(html: str, output_dir: Path, basename: str) -> GzhOutputPaths:
+def write_gzh_outputs(html: str, output_dir: Path, basename: str, theme: str = "moyu-green") -> GzhOutputPaths:
     output_dir.mkdir(parents=True, exist_ok=True)
-    clean_html = output_dir / f"{basename}_排版_摸鱼绿(moyu-green).html"
-    preview_html = output_dir / f"{basename}_排版_摸鱼绿(moyu-green)_预览.html"
+    label = theme_label(theme)
+    clean_html = output_dir / f"{basename}_排版_{label}.html"
+    preview_html = output_dir / f"{basename}_排版_{label}_预览.html"
     clean_html.write_text(html, encoding="utf-8")
     subprocess.run(
         ["python3", str(SKILL_ROOT / "scripts" / "wrap_preview.py"), str(clean_html), str(preview_html)],

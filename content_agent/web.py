@@ -37,10 +37,11 @@ from .database import (
     init_schema,
     session_factory,
 )
-from .formatters.wechat_gzh import format_wechat_markdown, write_gzh_outputs
+from .formatters.wechat_gzh import format_wechat_markdown, theme_label, write_gzh_outputs
 from .generation import generate_llm_drafts
 from .keyword_seed import build_keyword_seed_candidates
 from .models import TopicBrief, TopicScore, WorkflowResult
+from .prompts import COVER_STYLE_GUIDANCE, apply_cover_style
 from .wechat_publish import publish_wechat_draft
 from .workflow import run_keyword_workflow
 
@@ -48,6 +49,7 @@ from .workflow import run_keyword_workflow
 CollectorName = Literal["baidu_search"]
 ChannelName = Literal["wechat", "xiaohongshu"]
 JobStatus = Literal["queued", "running", "completed", "preview_ready", "publishing", "published_draft", "failed", "archived"]
+StepName = Literal["materials", "content", "format", "cover", "submit", "all"]
 
 
 @dataclass(frozen=True)
@@ -61,6 +63,8 @@ class WebRunOptions:
     submit_wechat_draft: bool = False
     wechat_content_html: str = ""
     wechat_cover_image: str = ""
+    format_theme: str = "moyu-green"
+    cover_style: str = "business-tech"
     output_dir: Path = Path("output")
 
 
@@ -102,15 +106,32 @@ class JobStore:
         self._session_factory = session_factory(self._engine)
         self.auth = AuthStore(self._session_factory)
 
-    def create(self, options: WebRunOptions, user_id: int | None = None) -> WebJob:
+    def create(self, options: WebRunOptions, user_id: int | None = None, step: StepName = "all") -> WebJob:
         job = WebJob(id=uuid4().hex[:12], options=options, user_id=user_id)
         with self._lock:
             self._jobs[job.id] = job
         self._persist_job(job)
         if self._auto_start:
-            thread = threading.Thread(target=self._run_job, args=(job.id,), daemon=True)
+            thread = threading.Thread(target=self._run_job, args=(job.id, step), daemon=True)
             thread.start()
         return job
+
+    def start_step(self, job_id: str, step: StepName, options: WebRunOptions | None = None) -> WebJob:
+        job = self.get(job_id)
+        if job is None:
+            raise KeyError(job_id)
+        if options is not None:
+            self._update(job_id, options=options)
+        validate_step_prerequisites(step, job.result)
+        if self._auto_start:
+            thread = threading.Thread(target=self._run_job, args=(job_id, step), daemon=True)
+            thread.start()
+        else:
+            self._run_job(job_id, step)
+        refreshed = self.get(job_id)
+        if refreshed is None:
+            raise KeyError(job_id)
+        return refreshed
 
     def get(self, job_id: str) -> WebJob | None:
         with self._lock:
@@ -141,16 +162,24 @@ class JobStore:
             )
             return row is not None
 
-    def _run_job(self, job_id: str) -> None:
+    def _run_job(self, job_id: str, step: StepName = "all") -> None:
         job = self.get(job_id)
         if job is None:
             return
-        self._update(job_id, status="running", event="Job started")
+        self._update(job_id, status="running", event=_step_started_message(step))
         try:
-            result = run_agent_workflow(job.options, progress=lambda message: self._update(job_id, event=message))
-            self._update(job_id, status=_status_for_result(result), result=result, event="Job completed")
+            if step == "all":
+                result = run_agent_workflow(job.options, progress=lambda message: self._update(job_id, event=message))
+            else:
+                result = run_agent_step(
+                    job.options,
+                    step=step,
+                    current_result=job.result,
+                    progress=lambda message: self._update(job_id, event=message),
+                )
+            self._update(job_id, status=_status_for_result(result), result=result, event=_step_finished_message(step))
         except Exception as exc:
-            self._update(job_id, status="failed", error=str(exc), event=f"Job failed: {exc}")
+            self._update(job_id, status="failed", error=str(exc), event=f"步骤失败：{exc}")
 
     def _update(
         self,
@@ -159,6 +188,7 @@ class JobStore:
         event: str | None = None,
         result: dict | None = None,
         error: str | None = None,
+        options: WebRunOptions | None = None,
     ) -> None:
         with self._lock:
             job = self._jobs.get(job_id)
@@ -171,6 +201,8 @@ class JobStore:
         with self._lock:
             if status:
                 job.status = status
+            if options is not None:
+                job.options = options
             if event:
                 job.events.append(event)
             if result is not None:
@@ -271,6 +303,8 @@ def _options_to_json(options: WebRunOptions) -> dict:
         "submit_wechat_draft": options.submit_wechat_draft,
         "wechat_content_html": options.wechat_content_html,
         "wechat_cover_image": options.wechat_cover_image,
+        "format_theme": options.format_theme,
+        "cover_style": options.cover_style,
         "output_dir": str(options.output_dir),
     }
 
@@ -287,6 +321,8 @@ def _options_from_json(payload: dict | None) -> WebRunOptions:
         submit_wechat_draft=bool(payload.get("submit_wechat_draft", False)),
         wechat_content_html=str(payload.get("wechat_content_html", "")),
         wechat_cover_image=str(payload.get("wechat_cover_image", "")),
+        format_theme=str(payload.get("format_theme", "moyu-green")),
+        cover_style=str(payload.get("cover_style", "business-tech")),
         output_dir=Path(str(payload.get("output_dir", "output"))),
     )
 
@@ -350,7 +386,7 @@ def _asset_rows_from_result(job_id: str, result: dict, created_at: float) -> lis
                 path=str(cover["path"]),
                 url=str(cover.get("url", "")),
                 mime_type="image/jpeg",
-                metadata_json={"model": cover.get("model", ""), "prompt": cover.get("prompt", "")},
+                metadata_json={"model": cover.get("model", ""), "prompt": cover.get("prompt", ""), "style": cover.get("style", "")},
                 created_at=created_at,
             )
         )
@@ -380,40 +416,41 @@ def run_agent_workflow(options: WebRunOptions, progress: Callable[[str], None] |
     _validate_options(options)
     emit = progress or (lambda message: None)
 
-    emit(f"Collecting candidates with {options.collector}")
+    emit("正在用百度搜索收集候选素材")
     candidates = _collect_candidates(options)
-    emit(f"Collected {len(candidates)} candidates")
+    emit(f"已收集 {len(candidates)} 条候选素材")
     if not candidates and options.collector == "baidu_search":
-        emit("Baidu search returned no candidates; using keyword seed topics")
+        emit("百度搜索暂无结果，已改用关键词种子选题")
         candidates = build_keyword_seed_candidates(options.keyword, options.channel)
-    emit("Scoring and building channel outputs")
+    emit("正在评分并生成选题")
     result = run_keyword_workflow(options.keyword, candidates=candidates, primary_channel=options.channel)
     payload = _to_jsonable(result)
+    payload["cover_prompt"] = _cover_prompt_for_style(str(payload.get("cover_prompt", "")), options.cover_style)
 
     formatted_html = None
     if options.use_llm:
-        emit("Loading config")
+        emit("正在读取模型配置")
         config = AgentConfig.from_env_file()
-        emit("Starting LLM draft generation")
-        payload["llm_drafts"] = generate_llm_drafts(result, config.build_llm_provider(), progress=emit)
-        emit("Finished LLM draft generation")
+        emit("正在生成正文内容")
+        payload["llm_drafts"] = generate_llm_drafts(result, config.build_llm_provider(), progress=_localized_generation_progress(emit))
+        emit("正文内容生成完成")
 
     if options.wechat_content_html:
         content_path = Path(options.wechat_content_html)
-        emit(f"Loading existing WeChat HTML: {content_path}")
+        emit(f"正在读取已有公众号 HTML：{content_path}")
         formatted_html = content_path.read_text(encoding="utf-8")
         payload["wechat_content_html"] = str(content_path)
     elif options.format_gzh or options.submit_wechat_draft:
-        emit("Formatting WeChat article")
+        emit("正在进行公众号排版")
         markdown = payload.get("llm_drafts", {}).get("wechat_article") or _wechat_outline_to_markdown(result.wechat_outline)
-        formatted_html = format_wechat_markdown(markdown)
-        paths = write_gzh_outputs(formatted_html, options.output_dir, _safe_basename(options.keyword))
+        formatted_html = format_wechat_markdown(markdown, theme=options.format_theme)
+        paths = write_gzh_outputs(formatted_html, options.output_dir, _safe_basename(options.keyword), theme=options.format_theme)
         payload["gzh_formatting"] = {
-            "theme": "摸鱼绿(moyu-green)",
+            "theme": theme_label(options.format_theme),
             "clean_html": str(paths.clean_html),
             "preview_html": str(paths.preview_html),
         }
-        emit("Finished WeChat formatting")
+        emit("公众号排版完成")
 
     cover_image_path = options.wechat_cover_image
     if cover_image_path:
@@ -421,13 +458,14 @@ def run_agent_workflow(options: WebRunOptions, progress: Callable[[str], None] |
             "path": cover_image_path,
             "url": "",
             "model": "manual",
-            "prompt": result.cover_prompt,
+            "prompt": payload["cover_prompt"],
+            "style": options.cover_style,
         }
     if options.generate_cover:
-        emit("Generating cover image with Replicate")
+        emit("正在用 Replicate 生成清晰封面")
         config = AgentConfig.from_env_file()
         generated_cover = generate_cover_image(
-            prompt=result.cover_prompt,
+            prompt=str(payload["cover_prompt"]),
             output_dir=options.output_dir,
             basename=_safe_basename(options.keyword),
             model=config.replicate_cover_model,
@@ -439,11 +477,12 @@ def run_agent_workflow(options: WebRunOptions, progress: Callable[[str], None] |
             "url": generated_cover.url,
             "model": generated_cover.model,
             "prompt": generated_cover.prompt,
+            "style": options.cover_style,
         }
-        emit("Finished cover generation")
+        emit("封面生成完成")
 
     if options.submit_wechat_draft:
-        emit("Submitting WeChat draft")
+        emit("正在提交公众号草稿箱")
         config = AgentConfig.from_env_file()
         published = publish_wechat_draft(
             result=result,
@@ -455,9 +494,83 @@ def run_agent_workflow(options: WebRunOptions, progress: Callable[[str], None] |
             "thumb_media_id": published.thumb_media_id,
             "response": published.response,
         }
-        emit("Finished WeChat draft submission")
+        emit("公众号草稿箱提交完成")
 
     return payload
+
+
+def run_agent_step(
+    options: WebRunOptions,
+    step: StepName,
+    current_result: dict | None = None,
+    progress: Callable[[str], None] | None = None,
+) -> dict:
+    validate_step_prerequisites(step, current_result)
+    emit = progress or (lambda message: None)
+
+    if step == "materials":
+        _validate_options(options)
+        emit("正在用百度搜索收集候选素材")
+        candidates = _collect_candidates(options)
+        emit(f"已收集 {len(candidates)} 条候选素材")
+        if not candidates:
+            emit("百度搜索暂无结果，已改用关键词种子选题")
+            candidates = build_keyword_seed_candidates(options.keyword, options.channel)
+        emit("正在评分并生成选题")
+        result = run_keyword_workflow(options.keyword, candidates=candidates, primary_channel=options.channel)
+        payload = _to_jsonable(result)
+        payload["cover_prompt"] = _cover_prompt_for_style(str(payload.get("cover_prompt", "")), options.cover_style)
+        return payload
+
+    payload = dict(current_result or {})
+    if step == "content":
+        emit("正在读取模型配置")
+        config = AgentConfig.from_env_file()
+        emit("正在生成正文内容")
+        payload["llm_drafts"] = generate_llm_drafts(
+            _workflow_result_from_payload(payload),
+            config.build_llm_provider(),
+            progress=_localized_generation_progress(emit),
+        )
+        emit("正文内容生成完成")
+        return payload
+
+    if step == "format":
+        emit("正在进行公众号排版")
+        markdown = str((payload.get("llm_drafts") or {}).get("wechat_article") or "")
+        formatted_html = format_wechat_markdown(markdown, theme=options.format_theme)
+        paths = write_gzh_outputs(formatted_html, options.output_dir, _safe_basename(options.keyword), theme=options.format_theme)
+        payload["gzh_formatting"] = {
+            "theme": theme_label(options.format_theme),
+            "clean_html": str(paths.clean_html),
+            "preview_html": str(paths.preview_html),
+        }
+        emit("公众号排版完成")
+        return payload
+
+    if step == "cover":
+        emit("正在用 Replicate 生成清晰封面")
+        config = AgentConfig.from_env_file()
+        prompt = _cover_prompt_for_style(str(payload.get("cover_prompt", "")), options.cover_style)
+        generated_cover = generate_cover_image(
+            prompt=prompt,
+            output_dir=options.output_dir,
+            basename=_safe_basename(options.keyword),
+            model=config.replicate_cover_model,
+            api_token=config.replicate_api_token,
+        )
+        payload["cover_prompt"] = prompt
+        payload["cover_image"] = {
+            "path": str(generated_cover.path),
+            "url": generated_cover.url,
+            "model": generated_cover.model,
+            "prompt": generated_cover.prompt,
+            "style": options.cover_style,
+        }
+        emit("封面生成完成")
+        return payload
+
+    raise ValueError(f"unsupported step: {step}")
 
 
 def submit_previewed_wechat_draft(
@@ -477,7 +590,7 @@ def submit_previewed_wechat_draft(
         raise ValueError("cover image is required before submitting")
 
     emit = progress or (lambda message: None)
-    emit("Submitting WeChat draft from preview")
+    emit("正在从预览提交公众号草稿箱")
     content_html = Path(html_path).read_text(encoding="utf-8")
     config = config or AgentConfig.from_env_file()
     published = publish_wechat_draft(
@@ -508,13 +621,14 @@ def submit_stored_previewed_wechat_draft(
         publish_attempts=list(job.publish_attempts),
     )
     try:
-        store._update(job_id, status="publishing", event="WeChat draft submission started")
+        validate_step_prerequisites("submit", preview_job.result)
+        store._update(job_id, status="publishing", event="开始提交草稿箱")
         result = submit_previewed_wechat_draft(
             preview_job,
             progress=lambda message: store._update(job_id, event=message),
             config=config,
         )
-        store._update(job_id, status="published_draft", result=result, event="WeChat draft submission completed")
+        store._update(job_id, status="published_draft", result=result, event="草稿箱提交完成")
         store.record_publish_attempt(
             job_id,
             platform="wechat",
@@ -527,7 +641,7 @@ def submit_stored_previewed_wechat_draft(
             raise KeyError(job_id)
         return submitted
     except Exception as exc:
-        store._update(job_id, status="failed", error=str(exc), event=f"WeChat draft submission failed: {exc}")
+        store._update(job_id, status="failed", error=str(exc), event=f"草稿箱提交失败：{exc}")
         store.record_publish_attempt(
             job_id,
             platform="wechat",
@@ -642,6 +756,46 @@ class ContentAgentHandler(BaseHTTPRequestHandler):
         if parsed.path == "/settings/wechat":
             self._save_wechat_settings()
             return
+        if parsed.path.startswith("/api/jobs/") and "/steps/" in parsed.path:
+            user = self._require_user(json_response=True)
+            if user is None:
+                return
+            parts = parsed.path.strip("/").split("/")
+            if len(parts) != 5:
+                self._send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
+                return
+            job_id = parts[2]
+            step = parts[4]
+            job = self.store.get(job_id)
+            if job is None or job.user_id != user["id"]:
+                self._send_json({"error": "job not found"}, status=HTTPStatus.NOT_FOUND)
+                return
+            if step == "submit":
+                try:
+                    submitted = submit_stored_previewed_wechat_draft(
+                        self.store,
+                        job_id,
+                        config=self._wechat_publish_config_for_user(user["id"]),
+                    )
+                    self._send_json(submitted.to_dict())
+                except Exception as exc:
+                    latest = self.store.get(job_id)
+                    self._send_json(
+                        {"error": str(exc), "job": latest.to_dict() if latest else None},
+                        status=HTTPStatus.BAD_REQUEST,
+                    )
+                return
+            try:
+                options = _merge_options_payload(job.options, self._read_json())
+                updated = self.store.start_step(job_id, _parse_step(step), options=options)
+                self._send_json(updated.to_dict(), status=HTTPStatus.ACCEPTED)
+            except Exception as exc:
+                latest = self.store.get(job_id)
+                self._send_json(
+                    {"error": str(exc), "job": latest.to_dict() if latest else None},
+                    status=HTTPStatus.BAD_REQUEST,
+                )
+            return
         if parsed.path.startswith("/api/jobs/") and parsed.path.endswith("/submit"):
             user = self._require_user(json_response=True)
             if user is None:
@@ -668,8 +822,9 @@ class ContentAgentHandler(BaseHTTPRequestHandler):
         if user is None:
             return
         try:
-            options = _options_from_payload(self._read_json())
-            job = self.store.create(options, user_id=user["id"])
+            payload = self._read_json()
+            options = _options_from_payload(payload)
+            job = self.store.create(options, user_id=user["id"], step=_parse_step(str(payload.get("step", "all"))))
             self._send_json(job.to_dict(), status=HTTPStatus.ACCEPTED)
         except Exception as exc:
             self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
@@ -987,8 +1142,40 @@ def _options_from_payload(payload: dict) -> WebRunOptions:
         submit_wechat_draft=bool(payload.get("submit_wechat_draft", False)),
         wechat_content_html=str(payload.get("wechat_content_html", "")).strip(),
         wechat_cover_image=str(payload.get("wechat_cover_image", "")).strip(),
+        format_theme=str(payload.get("format_theme", "moyu-green")).strip() or "moyu-green",
+        cover_style=str(payload.get("cover_style", "business-tech")).strip() or "business-tech",
         output_dir=Path(str(payload.get("output_dir", "output")).strip() or "output"),
     )
+
+
+def _merge_options_payload(options: WebRunOptions, payload: dict | None) -> WebRunOptions:
+    merged = _options_to_json(options)
+    merged.update(payload or {})
+    return _options_from_payload(merged)
+
+
+def _parse_step(step: str) -> StepName:
+    if step in {"materials", "content", "format", "cover", "submit", "all"}:
+        return step  # type: ignore[return-value]
+    raise ValueError("未知步骤")
+
+
+def validate_step_prerequisites(step: StepName, result: dict | None) -> None:
+    if step in {"materials", "all"}:
+        return
+    if not result or not result.get("topics"):
+        raise ValueError("请先搜素材，再执行后续步骤")
+    if step == "content":
+        return
+    if step == "format" and not (result.get("llm_drafts") or {}).get("wechat_article"):
+        raise ValueError("请先生成内容，再进行公众号排版")
+    if step == "cover" and not result.get("cover_prompt"):
+        raise ValueError("请先搜素材，再生成封面")
+    if step == "submit":
+        if not _preview_clean_html_path(result):
+            raise ValueError("请先完成公众号排版预览，再提交草稿箱")
+        if not _preview_cover_path(result):
+            raise ValueError("请先生成封面，再提交草稿箱")
 
 
 def _validate_options(options: WebRunOptions) -> None:
@@ -1000,6 +1187,56 @@ def _validate_options(options: WebRunOptions) -> None:
         raise ValueError("collector must be baidu_search")
     if options.submit_wechat_draft and not options.wechat_cover_image and not options.generate_cover:
         raise ValueError("wechat_cover_image is required when submitting without generating a cover")
+    theme_label(options.format_theme)
+    _cover_prompt_for_style("workspace cover", options.cover_style)
+
+
+def _cover_prompt_for_style(prompt: str, cover_style: str) -> str:
+    prefix = "Replicate image prompt: "
+    text = str(prompt or "").strip()
+    if text.startswith(prefix):
+        text = text[len(prefix) :]
+    style_part, marker, rest = text.partition(". Main idea:")
+    for guidance in COVER_STYLE_GUIDANCE.values():
+        if style_part.startswith(guidance + ", "):
+            style_part = style_part[len(guidance) + 2 :]
+            break
+    styled = apply_cover_style(style_part or "full-bleed editorial cover", cover_style)
+    return f"{prefix}{styled}{marker}{rest}" if marker else f"{prefix}{styled}"
+
+
+def _localized_generation_progress(emit: Callable[[str], None]) -> Callable[[str], None]:
+    labels = {
+        "Generating wechat_article with LLM": "正在生成公众号正文",
+        "Generating xhs_note with LLM": "正在生成小红书笔记",
+    }
+
+    def _emit(message: str) -> None:
+        emit(labels.get(message, message))
+
+    return _emit
+
+
+def _step_started_message(step: StepName) -> str:
+    return {
+        "materials": "开始搜素材",
+        "content": "开始生成内容",
+        "format": "开始排版预览",
+        "cover": "开始生成封面",
+        "submit": "开始提交草稿箱",
+        "all": "任务开始",
+    }.get(step, "任务开始")
+
+
+def _step_finished_message(step: StepName) -> str:
+    return {
+        "materials": "素材步骤完成",
+        "content": "内容步骤完成",
+        "format": "排版步骤完成",
+        "cover": "封面步骤完成",
+        "submit": "草稿箱提交完成",
+        "all": "任务完成",
+    }.get(step, "任务完成")
 
 
 def _collect_candidates(options: WebRunOptions):
@@ -1532,6 +1769,10 @@ INDEX_HTML = r"""<!doctype html>
       cursor: pointer;
     }
     button:disabled { opacity: 0.6; cursor: wait; }
+    .step-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
+    .step-buttons button { margin: 0; }
+    .step-buttons .secondary-step { background: #e9f3ed; color: var(--green-dark); }
+    .step-buttons .disabled-step { background: #eef0ed; color: #7e8782; }
     .grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr); gap: 18px; }
     .panel {
       background: var(--panel);
@@ -1624,6 +1865,7 @@ INDEX_HTML = r"""<!doctype html>
     .history-item.active { border-color: var(--green); box-shadow: 0 0 0 3px rgba(15, 138, 95, 0.10); }
     .history-title { font-size: 13px; font-weight: 800; line-height: 1.35; overflow-wrap: anywhere; }
     .history-meta { margin-top: 6px; color: var(--muted); font-size: 11px; line-height: 1.5; display: flex; flex-wrap: wrap; gap: 8px; }
+    .publish-tag { color: var(--green-dark); font-weight: 900; }
     @media (max-width: 980px) {
       .shell { grid-template-columns: 1fr; }
       aside { border-right: 0; border-bottom: 1px solid var(--line); }
@@ -1656,6 +1898,22 @@ INDEX_HTML = r"""<!doctype html>
           <option value="baidu_search" selected>百度搜索 前10篇非广告</option>
         </select>
 
+        <label for="formatTheme">公众号排版样式</label>
+        <select id="formatTheme" name="format_theme">
+          <option value="moyu-green" selected>摸鱼绿</option>
+          <option value="tech-blue">科技蓝</option>
+          <option value="minimal-mono">极简黑白</option>
+          <option value="warm-card">暖色知识卡</option>
+        </select>
+
+        <label for="coverStyle">素材图片风格</label>
+        <select id="coverStyle" name="cover_style">
+          <option value="business-tech" selected>商务科技</option>
+          <option value="real-photo">真实摄影</option>
+          <option value="minimal-illustration">极简插画</option>
+          <option value="knowledge-card">知识封面</option>
+        </select>
+
         <label class="check"><input id="useLlm" type="checkbox">生成内容</label>
         <label class="check"><input id="formatGzh" type="checkbox" checked>公众号排版</label>
         <label class="check"><input id="generateCover" type="checkbox">生成封面</label>
@@ -1666,7 +1924,12 @@ INDEX_HTML = r"""<!doctype html>
         <label for="wechatCoverImage">已有封面图</label>
         <input id="wechatCoverImage" placeholder="output/AI副业_cover_wechat_thumb.jpg">
 
-        <button id="runButton" type="submit">运行 Agent</button>
+        <div class="step-buttons">
+          <button id="runButton" type="submit" data-step="materials">搜素材</button>
+          <button class="secondary-step" type="button" data-step="content">生成内容</button>
+          <button class="secondary-step" type="button" data-step="format">排版预览</button>
+          <button class="secondary-step" type="button" data-step="cover">生成封面</button>
+        </div>
       </form>
       <div class="history-head">
         <h2>历史记录</h2>
@@ -1712,35 +1975,47 @@ INDEX_HTML = r"""<!doctype html>
     const submitHint = document.getElementById("submitHint");
     const historyList = document.getElementById("historyList");
     const refreshHistoryButton = document.getElementById("refreshHistoryButton");
+    const stepButtons = Array.from(document.querySelectorAll("[data-step]"));
+    const statusLabels = {
+      queued: "排队中",
+      running: "执行中",
+      completed: "已完成",
+      preview_ready: "预览完成",
+      publishing: "发布中",
+      published_draft: "已发布",
+      failed: "失败",
+      archived: "已归档"
+    };
     let currentJobId = "";
 
     loadHistory();
     refreshHistoryButton.addEventListener("click", loadHistory);
+    stepButtons.forEach(button => {
+      if (button.id === "runButton") return;
+      button.addEventListener("click", () => runStep(button.dataset.step));
+    });
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      runButton.disabled = true;
+      startMaterialsJob();
+    });
+
+    async function startMaterialsJob() {
+      setBusy(true);
       submitDraftButton.disabled = true;
       submitHint.textContent = "先生成预览，确认无误后再提交。";
       currentJobId = "";
-      statusEl.textContent = "starting";
+      statusEl.textContent = "启动中";
       eventsEl.innerHTML = "";
       topicsEl.innerHTML = '<p class="empty">正在收集和评分。</p>';
       previewEl.innerHTML = '<p class="empty">等待排版结果。</p>';
       assetsEl.innerHTML = '<p class="empty">等待封面或提交结果。</p>';
 
-      const payload = {
-        keyword: document.getElementById("keyword").value,
-        channel: document.getElementById("channel").value,
-        collector: document.getElementById("collector").value,
-        use_llm: document.getElementById("useLlm").checked,
-        format_gzh: document.getElementById("formatGzh").checked,
-        generate_cover: document.getElementById("generateCover").checked,
-        submit_wechat_draft: false,
-        wechat_content_html: document.getElementById("wechatContentHtml").value,
-        wechat_cover_image: document.getElementById("wechatCoverImage").value,
-        output_dir: "output"
-      };
+      const payload = collectOptions();
+      payload.step = "materials";
+      payload.use_llm = false;
+      payload.format_gzh = false;
+      payload.generate_cover = false;
 
       try {
         const response = await fetch("/api/jobs", {
@@ -1754,18 +2029,43 @@ INDEX_HTML = r"""<!doctype html>
         loadHistory();
         pollJob(job.id);
       } catch (error) {
-        statusEl.textContent = "failed";
+        statusEl.textContent = "失败";
         eventsEl.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
-        runButton.disabled = false;
+        setBusy(false);
       }
-    });
+    }
+
+    async function runStep(step) {
+      if (!currentJobId) {
+        eventsEl.innerHTML = '<p class="error">请先搜素材，或从历史记录选择一篇内容。</p>';
+        return;
+      }
+      setBusy(true);
+      const stepText = {content: "正在生成内容。", format: "正在排版预览。", cover: "正在生成封面。"}[step] || "正在执行。";
+      submitHint.textContent = stepText;
+      try {
+        const response = await fetch(`/api/jobs/${currentJobId}/steps/${step}`, {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(collectOptions())
+        });
+        const payload = await response.json();
+        const job = payload.job || payload;
+        renderJob(job);
+        if (!response.ok) throw new Error(payload.error || "步骤执行失败");
+        pollJob(job.id);
+      } catch (error) {
+        eventsEl.innerHTML += `<p class="error">${escapeHtml(error.message)}</p>`;
+        setBusy(false);
+      }
+    }
 
     submitDraftButton.addEventListener("click", async () => {
       if (!currentJobId) return;
       submitDraftButton.disabled = true;
       submitHint.textContent = "正在提交到公众号草稿箱。";
       try {
-        const response = await fetch(`/api/jobs/${currentJobId}/submit`, {method: "POST"});
+        const response = await fetch(`/api/jobs/${currentJobId}/steps/submit`, {method: "POST"});
         const payload = await response.json();
         const job = payload.job || payload;
         renderJob(job);
@@ -1783,14 +2083,14 @@ INDEX_HTML = r"""<!doctype html>
       if (job.status === "queued" || job.status === "running" || job.status === "publishing") {
         setTimeout(() => pollJob(jobId), 1200);
       } else {
-        runButton.disabled = false;
+        setBusy(false);
         loadHistory();
       }
     }
 
     function renderJob(job) {
       currentJobId = job.id || currentJobId;
-      statusEl.textContent = job.status;
+      statusEl.textContent = statusLabel(job.status);
       eventsEl.innerHTML = (job.events || []).map(item => `<div class="event">${escapeHtml(item)}</div>`).join("");
       if (job.error) {
         eventsEl.innerHTML += `<p class="error">${escapeHtml(job.error)}</p>`;
@@ -1822,7 +2122,8 @@ INDEX_HTML = r"""<!doctype html>
             <div class="history-title">${escapeHtml(options.keyword || job.result?.keyword || "未命名内容")}</div>
             <div class="history-meta">
               <span>${escapeHtml(options.channel || "")}</span>
-              <span>${escapeHtml(job.status || "")}</span>
+              <span>${escapeHtml(statusLabel(job.status))}</span>
+              <span class="publish-tag">${escapeHtml(publishLabel(job))}</span>
               <span>${formatTime(job.updated_at)}</span>
             </div>
           </button>
@@ -1841,8 +2142,36 @@ INDEX_HTML = r"""<!doctype html>
         return;
       }
       currentJobId = job.id;
+      applyOptions(job.options || {});
       renderJob(job);
       loadHistory();
+    }
+
+    function collectOptions() {
+      return {
+        keyword: document.getElementById("keyword").value,
+        channel: document.getElementById("channel").value,
+        collector: document.getElementById("collector").value,
+        use_llm: document.getElementById("useLlm").checked,
+        format_gzh: document.getElementById("formatGzh").checked,
+        generate_cover: document.getElementById("generateCover").checked,
+        submit_wechat_draft: false,
+        wechat_content_html: document.getElementById("wechatContentHtml").value,
+        wechat_cover_image: document.getElementById("wechatCoverImage").value,
+        format_theme: document.getElementById("formatTheme").value,
+        cover_style: document.getElementById("coverStyle").value,
+        output_dir: "output"
+      };
+    }
+
+    function applyOptions(options) {
+      if (options.keyword) document.getElementById("keyword").value = options.keyword;
+      if (options.channel) document.getElementById("channel").value = options.channel;
+      if (options.collector) document.getElementById("collector").value = options.collector;
+      if (options.format_theme) document.getElementById("formatTheme").value = options.format_theme;
+      if (options.cover_style) document.getElementById("coverStyle").value = options.cover_style;
+      document.getElementById("wechatContentHtml").value = options.wechat_content_html || "";
+      document.getElementById("wechatCoverImage").value = options.wechat_cover_image || "";
     }
 
     function renderResult(result) {
@@ -1870,6 +2199,24 @@ INDEX_HTML = r"""<!doctype html>
         result.wechat_draft_error ? `<p class="error">${escapeHtml(result.wechat_draft_error)}</p>` : ""
       ].filter(Boolean).join("") || '<p class="empty">没有封面或草稿结果。</p>';
       renderSubmitGate(result);
+    }
+
+    function setBusy(isBusy) {
+      stepButtons.forEach(button => button.disabled = isBusy);
+      if (isBusy) {
+        submitDraftButton.disabled = true;
+      }
+    }
+
+    function statusLabel(status) {
+      return statusLabels[status] || status || "";
+    }
+
+    function publishLabel(job) {
+      if (job.status === "published_draft" || job.result?.wechat_draft) return "已发布";
+      const attempts = job.publish_attempts || [];
+      if (attempts.some(attempt => attempt.status === "failed")) return "发布失败";
+      return "未发布";
     }
 
     function renderSubmitGate(result) {
