@@ -1,7 +1,10 @@
 import tempfile
 import unittest
 import os
+from io import BytesIO
 from pathlib import Path
+
+from PIL import Image
 
 from content_agent.cover_generation import ReplicateHttpRunner, generate_cover_image
 
@@ -13,6 +16,15 @@ class FakeReplicateOutput:
         return b"generated-image"
 
 
+class FakeImageReplicateOutput:
+    url = "https://replicate.delivery/mock/output.jpg"
+
+    def read(self):
+        stream = BytesIO()
+        Image.new("RGB", (1024, 1024), color=(28, 92, 78)).save(stream, format="JPEG")
+        return stream.getvalue()
+
+
 class FakeReplicateRunner:
     def __init__(self):
         self.calls = []
@@ -20,6 +32,12 @@ class FakeReplicateRunner:
     def run(self, model, input):
         self.calls.append((model, input))
         return FakeReplicateOutput()
+
+
+class FakeImageReplicateRunner(FakeReplicateRunner):
+    def run(self, model, input):
+        self.calls.append((model, input))
+        return FakeImageReplicateOutput()
 
 
 class CoverGenerationTests(unittest.TestCase):
@@ -54,6 +72,23 @@ class CoverGenerationTests(unittest.TestCase):
             self.assertEqual(runner.calls[0][0], "black-forest-labs/flux-1.1-pro")
             self.assertTrue(runner.calls[0][1]["prompt_upsampling"])
             self.assertEqual(runner.calls[0][1]["aspect_ratio"], "16:9")
+
+    def test_normalizes_generated_cover_file_to_sixteen_to_nine(self):
+        runner = FakeImageReplicateRunner()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cover = generate_cover_image(
+                prompt="clean knowledge-card cover",
+                output_dir=Path(tmpdir),
+                basename="AI副业",
+                model="black-forest-labs/flux-1.1-pro",
+                runner=runner,
+            )
+
+            with Image.open(cover.path) as image:
+                width, height = image.size
+
+        self.assertAlmostEqual(width / height, 16 / 9, places=2)
 
     def test_sets_replicate_token_for_sdk_without_printing_it(self):
         runner = FakeReplicateRunner()

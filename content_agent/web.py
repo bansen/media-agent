@@ -1814,9 +1814,10 @@ INDEX_HTML = r"""<!doctype html>
       background: #fff;
     }
     .cover {
+      display: block;
       width: 100%;
-      max-height: 260px;
-      object-fit: contain;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
       border: 1px solid var(--line);
       border-radius: 8px;
       background: #f0f2ed;

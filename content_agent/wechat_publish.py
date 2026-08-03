@@ -55,8 +55,8 @@ def prepare_wechat_thumb_image(image_path: str | Path, max_bytes: int = 64 * 102
 
     output_path = path.with_name(f"{path.stem}_wechat_thumb.jpg")
     with Image.open(path) as image:
-        image.thumbnail((900, 506), Image.Resampling.LANCZOS)
-        rgb_image = image.convert("RGB")
+        rgb_image = _crop_to_aspect(image.convert("RGB"), 16 / 9)
+        rgb_image.thumbnail((900, 506), Image.Resampling.LANCZOS)
         quality = 92
         while True:
             rgb_image.save(output_path, format="JPEG", quality=quality, optimize=True, progressive=False)
@@ -75,3 +75,17 @@ def prepare_wechat_thumb_image(image_path: str | Path, max_bytes: int = 64 * 102
 def _is_jpeg(path: Path) -> bool:
     with path.open("rb") as file:
         return file.read(2) == b"\xff\xd8"
+
+
+def _crop_to_aspect(image: Image.Image, aspect_ratio: float) -> Image.Image:
+    width, height = image.size
+    current_ratio = width / height
+    if abs(current_ratio - aspect_ratio) < 0.01:
+        return image
+    if current_ratio > aspect_ratio:
+        new_width = int(height * aspect_ratio)
+        left = (width - new_width) // 2
+        return image.crop((left, 0, left + new_width, height))
+    new_height = int(width / aspect_ratio)
+    top = (height - new_height) // 2
+    return image.crop((0, top, width, top + new_height))

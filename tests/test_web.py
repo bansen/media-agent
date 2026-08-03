@@ -45,6 +45,7 @@ class WebTests(unittest.TestCase):
         self.assertIn('id="runAllButton"', html)
         self.assertIn('data-step="all"', html)
         self.assertIn("一键生成全部", html)
+        self.assertIn("aspect-ratio: 16 / 9", html)
         self.assertIn('data-step="materials"', html)
         self.assertIn('data-step="content"', html)
         self.assertIn('data-step="format"', html)

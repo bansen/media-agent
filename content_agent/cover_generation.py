@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from io import BytesIO
 from dataclasses import dataclass
 import os
 import json
 from pathlib import Path
 from typing import Protocol
 from urllib import request
+
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 
 class ReplicateRunner(Protocol):
@@ -95,7 +98,7 @@ def generate_cover_image(
     file_output = output[0] if isinstance(output, list) else output
     image_bytes = file_output.read()
     path = output_dir / f"{basename}_cover.jpg"
-    path.write_bytes(image_bytes)
+    _write_cover_image(image_bytes, path)
     return GeneratedCover(
         path=path,
         url=getattr(file_output, "url", ""),
@@ -116,3 +119,12 @@ def _default_runner(api_token: str):
 
 def _clean_replicate_prompt(prompt: str) -> str:
     return prompt.removeprefix("Replicate image prompt:").strip()
+
+
+def _write_cover_image(image_bytes: bytes, path: Path) -> None:
+    try:
+        with Image.open(BytesIO(image_bytes)) as image:
+            cover = ImageOps.fit(image.convert("RGB"), (1600, 900), method=Image.Resampling.LANCZOS)
+            cover.save(path, format="JPEG", quality=94, optimize=True, progressive=False)
+    except (OSError, UnidentifiedImageError):
+        path.write_bytes(image_bytes)

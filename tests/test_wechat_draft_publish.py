@@ -76,7 +76,7 @@ class WeChatDraftPublishTests(unittest.TestCase):
     def test_wechat_thumb_preserves_sixteen_to_nine_cover_ratio(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             cover = Path(tmpdir) / "cover.webp"
-            image = Image.new("RGB", (1600, 900), color=(28, 92, 78))
+            image = Image.new("RGB", (1000, 1000), color=(28, 92, 78))
             image.save(cover, format="WEBP")
 
             thumb = prepare_wechat_thumb_image(cover)

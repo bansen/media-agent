@@ -212,10 +212,10 @@ def _cover(title: str) -> str:
       <p style="font-size:15px;color:#D1D5DB;margin:0 0 6px;text-decoration:line-through;letter-spacing:0.5px;">
         <span leaf="">先追风口</span>
       </p>
-      <p style="font-size:24px;font-weight:900;color:#111827;margin:0;line-height:1.05;letter-spacing:0;">
+      <p style="font-size:24px;font-weight:900;color:#111827;margin:0;line-height:1.16;letter-spacing:0;">
         <span leaf="">{_text(first)}</span>
       </p>
-      <p style="font-size:24px;font-weight:900;color:#059669;margin:0 0 16px;line-height:1.05;letter-spacing:0;">
+      <p style="font-size:24px;font-weight:900;color:#059669;margin:0 0 16px;line-height:1.16;letter-spacing:0;">
         <span leaf="">{_text(second)}</span>
       </p>
       <section style="width:48px;height:3px;background:linear-gradient(to right,#059669,#34D399);border-radius:2px;margin-bottom:12px;">
@@ -445,7 +445,7 @@ def _split_title(title: str) -> tuple[str, str]:
     clean = title.strip()
     if len(clean) <= 12:
         return clean, "方法拆解"
-    return clean[:12], clean[12:24] or "方法拆解"
+    return clean[:12], clean[12:] or "方法拆解"
 
 
 def _english_label(title: str) -> str:

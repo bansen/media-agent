@@ -60,6 +60,12 @@ class WeChatGzhFormattingTests(unittest.TestCase):
         self.assertNotIn("每天分享一个 AI 副业避坑指南", html)
         self.assertIn("关注我，一起拆解 AI 工具、副业实践和普通人的学习路径", html)
 
+    def test_cover_title_keeps_full_long_title(self):
+        html = format_wechat_markdown("# 别再问“AI能干嘛”了，MiniMax H3的新模型\n\n## 第一节\n\n正文内容。")
+
+        self.assertIn("别再问“AI能干嘛”了，", html)
+        self.assertIn("MiniMax H3的新模型", html)
+
     def test_accepts_multiple_named_themes(self):
         markdown = "# 标题\n\n## 第一节\n\n正文内容。"
 
