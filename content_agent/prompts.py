@@ -11,11 +11,16 @@ COVER_STYLE_GUIDANCE = {
 }
 
 
-def build_wechat_outline(topic: TopicBrief) -> str:
+def build_wechat_outline(topic: TopicBrief, keyword: str = "") -> str:
+    keyword_line = f"用户关键词：{keyword.strip()}" if keyword.strip() else "用户关键词：未提供"
+    source_line = f"选中素材：{topic.title}"
     return "\n".join(
         [
             f"公众号文章：《{topic.optimized_title}》",
+            keyword_line,
+            source_line,
             "定位：写给想做副业的打工族或待业者。",
+            "主题锁定：全文必须围绕用户关键词和选中素材展开，不要改写成泛泛的 AI 学习或副业赚钱文章。",
             "结构：痛点开场 -> 真实案例 -> 方法拆解 -> 避坑提醒 -> 行动清单。",
             f"角度：{topic.angle}",
             "合规：不承诺收益，不制造暴富焦虑，所有案例需标注来源或改为匿名经验。",

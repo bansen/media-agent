@@ -32,7 +32,7 @@ def run_keyword_workflow(
         keyword=keyword,
         expanded_keywords=expanded_keywords,
         topics=topics[:limit],
-        wechat_outline=build_wechat_outline(selected),
+        wechat_outline=build_wechat_outline(selected, keyword=keyword),
         xhs_package=build_xhs_package(selected),
         cover_prompt=build_cover_prompt(selected, channel=primary_channel),
     )

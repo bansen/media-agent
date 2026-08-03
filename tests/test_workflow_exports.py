@@ -111,6 +111,27 @@ class WorkflowExportTests(unittest.TestCase):
         self.assertIn("abstract software interfaces", prompt)
         self.assertNotIn("money piles", prompt.replace("no money piles", ""))
 
+    def test_wechat_outline_keeps_keyword_and_selected_material_context(self):
+        candidates = [
+            CandidateContent(
+                title="MiniMax H3正式发布",
+                source="baidu_search",
+                url="https://example.com/minimax-h3",
+                heat=72,
+                interaction=70,
+                hook=82,
+                pain=76,
+                reuse=80,
+                material=78,
+            )
+        ]
+
+        result = run_keyword_workflow("minimax h3介绍", candidates=candidates, primary_channel="wechat")
+
+        self.assertIn("用户关键词：minimax h3介绍", result.wechat_outline)
+        self.assertIn("选中素材：MiniMax H3正式发布", result.wechat_outline)
+        self.assertIn("不要改写成泛泛的 AI 学习或副业赚钱文章", result.wechat_outline)
+
     def test_xiaohongshu_cover_prompt_adapts_to_health_topic(self):
         candidates = [
             CandidateContent(
