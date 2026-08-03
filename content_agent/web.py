@@ -1760,7 +1760,8 @@ INDEX_HTML = r"""<!doctype html>
       cursor: pointer;
     }
     button:disabled { opacity: 0.6; cursor: wait; }
-    .step-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
+    .run-all-button { margin-top: 18px; }
+    .step-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
     .step-buttons button { margin: 0; }
     .step-buttons .secondary-step { background: #e9f3ed; color: var(--green-dark); }
     .step-buttons .disabled-step { background: #eef0ed; color: #7e8782; }
@@ -1905,8 +1906,9 @@ INDEX_HTML = r"""<!doctype html>
           <option value="knowledge-card">知识封面</option>
         </select>
 
+        <button id="runAllButton" class="run-all-button" type="submit" data-step="all">一键生成全部</button>
         <div class="step-buttons">
-          <button id="runButton" type="submit" data-step="materials">搜素材</button>
+          <button class="secondary-step" type="button" data-step="materials">搜素材</button>
           <button class="secondary-step" type="button" data-step="content">生成内容</button>
           <button class="secondary-step" type="button" data-step="format">排版预览</button>
           <button class="secondary-step" type="button" data-step="cover">生成封面</button>
@@ -1933,7 +1935,7 @@ INDEX_HTML = r"""<!doctype html>
       <div class="grid" style="margin-top:18px;">
         <section class="panel">
           <h2>公众号预览</h2>
-          <div id="preview"><p class="empty">勾选公众号排版后展示预览。</p></div>
+          <div id="preview"><p class="empty">排版预览完成后展示。</p></div>
         </section>
         <section class="panel">
           <h2>封面与提交</h2>
@@ -1946,7 +1948,7 @@ INDEX_HTML = r"""<!doctype html>
   </div>
   <script>
     const form = document.getElementById("runForm");
-    const runButton = document.getElementById("runButton");
+    const runAllButton = document.getElementById("runAllButton");
     const statusEl = document.getElementById("status");
     const eventsEl = document.getElementById("events");
     const topicsEl = document.getElementById("topics");
@@ -1972,31 +1974,55 @@ INDEX_HTML = r"""<!doctype html>
     loadHistory();
     refreshHistoryButton.addEventListener("click", loadHistory);
     stepButtons.forEach(button => {
-      if (button.id === "runButton") return;
-      button.addEventListener("click", () => runStep(button.dataset.step));
+      if (button.id === "runAllButton") return;
+      if (button.dataset.step === "materials") {
+        button.addEventListener("click", startMaterialsJob);
+      } else {
+        button.addEventListener("click", () => runStep(button.dataset.step));
+      }
     });
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      startMaterialsJob();
+      startAllJob();
     });
 
-    async function startMaterialsJob() {
-      setBusy(true);
-      submitDraftButton.disabled = true;
-      submitHint.textContent = "先生成预览，确认无误后再提交。";
-      currentJobId = "";
-      statusEl.textContent = "启动中";
-      eventsEl.innerHTML = "";
-      topicsEl.innerHTML = '<p class="empty">正在收集和评分。</p>';
-      previewEl.innerHTML = '<p class="empty">等待排版结果。</p>';
-      assetsEl.innerHTML = '<p class="empty">等待封面或提交结果。</p>';
+    async function startAllJob() {
+      const payload = collectOptions();
+      payload.step = "all";
+      payload.use_llm = true;
+      payload.format_gzh = true;
+      payload.generate_cover = true;
+      await startNewJob(payload, {
+        statusText: "启动中",
+        topicsText: "正在收集素材、生成内容、排版和封面。",
+        submitText: "正在一键生成全部内容，完成后可预览并提交。"
+      });
+    }
 
+    async function startMaterialsJob() {
       const payload = collectOptions();
       payload.step = "materials";
       payload.use_llm = false;
       payload.format_gzh = false;
       payload.generate_cover = false;
+      await startNewJob(payload, {
+        statusText: "启动中",
+        topicsText: "正在收集和评分。",
+        submitText: "先生成预览，确认无误后再提交。"
+      });
+    }
+
+    async function startNewJob(payload, copy) {
+      setBusy(true);
+      submitDraftButton.disabled = true;
+      submitHint.textContent = copy.submitText;
+      currentJobId = "";
+      statusEl.textContent = copy.statusText;
+      eventsEl.innerHTML = "";
+      topicsEl.innerHTML = `<p class="empty">${escapeHtml(copy.topicsText)}</p>`;
+      previewEl.innerHTML = '<p class="empty">等待排版结果。</p>';
+      assetsEl.innerHTML = '<p class="empty">等待封面或提交结果。</p>';
 
       try {
         const response = await fetch("/api/jobs", {
@@ -2208,9 +2234,9 @@ INDEX_HTML = r"""<!doctype html>
       } else if (!hasPreview && !hasCover) {
         submitHint.textContent = "请先生成公众号预览和封面。";
       } else if (!hasPreview) {
-        submitHint.textContent = "缺少公众号排版预览，请勾选公众号排版后重新运行。";
+        submitHint.textContent = "缺少公众号排版预览，请先执行排版预览。";
       } else if (!hasCover) {
-        submitHint.textContent = "缺少封面图，请勾选生成封面后重新运行。";
+        submitHint.textContent = "缺少封面图，请先执行生成封面。";
       } else {
         submitHint.textContent = "预览确认无误后，再提交到公众号草稿箱。";
       }
