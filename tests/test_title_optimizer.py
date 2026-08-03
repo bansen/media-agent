@@ -24,7 +24,9 @@ class TitleOptimizerTests(unittest.TestCase):
         optimized_title = result.topics[0].optimized_title
 
         self.assertEqual(result.topics[0].title, "上半年AI服务交易迎爆发式增长 年轻人开始用AI轻创业丨封面有数 - 封面新闻")
-        self.assertEqual(optimized_title, "普通人做 AI 副业，先看懂这 3 个真实信号")
+        self.assertIn("AI", optimized_title)
+        self.assertTrue(any(term in optimized_title for term in ["第一单", "切入", "机会", "服务"]))
+        self.assertNotEqual(optimized_title, "普通人做 AI 副业，先看懂这 3 个真实信号")
         self.assertIn(f"公众号文章：《{optimized_title}》", result.wechat_outline)
         self.assertIn(f"Main idea: {optimized_title}.", result.cover_prompt)
         self.assertNotIn("封面新闻", optimized_title)
@@ -32,6 +34,39 @@ class TitleOptimizerTests(unittest.TestCase):
         self.assertNotIn("稳赚", optimized_title)
         self.assertNotIn("月入", optimized_title)
         self.assertNotIn("躺赚", optimized_title)
+
+    def test_wechat_ai_titles_vary_by_topic_angle(self):
+        candidates = [
+            CandidateContent(
+                title="AI副业避坑：这些卖课套路正在收割新人",
+                source="baidu_search",
+                url="https://example.com/risk",
+                heat=90,
+                interaction=84,
+                hook=88,
+                pain=86,
+                reuse=77,
+                material=76,
+            ),
+            CandidateContent(
+                title="普通人学AI工具的完整路线和提示词教程",
+                source="baidu_search",
+                url="https://example.com/tool",
+                heat=86,
+                interaction=80,
+                hook=82,
+                pain=78,
+                reuse=84,
+                material=80,
+            ),
+        ]
+
+        risk = run_keyword_workflow("AI副业", candidates=[candidates[0]], primary_channel="wechat").topics[0].optimized_title
+        tool = run_keyword_workflow("AI学习", candidates=[candidates[1]], primary_channel="wechat").topics[0].optimized_title
+
+        self.assertNotEqual(risk, tool)
+        self.assertIn("坑", risk)
+        self.assertTrue(any(term in tool for term in ["工具", "场景", "路线"]))
 
     def test_xiaohongshu_health_title_keeps_lifestyle_positioning(self):
         candidates = [

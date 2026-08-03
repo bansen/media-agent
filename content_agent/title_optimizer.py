@@ -36,14 +36,20 @@ def clean_source_title(title: str) -> str:
 
 def _optimize_ai_side_hustle_title(title: str) -> str:
     if _contains_any(title, ["坑", "骗局", "卖课", "割韭菜", "造假", "避坑"]):
-        return "AI 副业热起来后，普通人最该避开的几个坑"
+        return "AI 副业可以做，但这 5 个坑先别踩"
     if _contains_any(title, ["轻创业", "副业", "声音变现", "AI服务", "交易", "爆发", "接单", "赚钱"]):
-        return "普通人做 AI 副业，先看懂这 3 个真实信号"
+        if _contains_any(title, ["交易", "服务", "AI服务", "爆发", "增长"]):
+            return "AI 服务需求变多了，普通人怎么找到第一单？"
+        if _contains_any(title, ["接单", "赚钱"]):
+            return "想用 AI 接单，先从这 3 类小服务切入"
+        return "AI 副业不是玄学，普通人先抓住这 3 个切入口"
     if _contains_any(title, ["工具", "学习", "路线", "教程", "提示词"]):
-        return "普通人学 AI，先从这 3 个能交付的小场景开始"
+        if _contains_any(title, ["提示词", "教程"]):
+            return "别只收藏提示词，先跑通这 3 个 AI 交付场景"
+        return "学 AI 工具别贪多，先搭一条可交付路线"
     if 10 <= len(title) <= 28 and not _contains_any(title, FORBIDDEN_TITLE_TERMS):
         return title
-    return "普通人学习 AI，先从一个能交付的小场景开始"
+    return "普通人学 AI，先把一个真实任务做成作品"
 
 
 def _optimize_keyword_title(title: str, keyword: str) -> str:

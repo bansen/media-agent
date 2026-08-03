@@ -1747,15 +1747,6 @@ INDEX_HTML = r"""<!doctype html>
       outline: none;
     }
     input:focus, select:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(15, 138, 95, 0.12); }
-    .check {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin: 12px 0;
-      color: var(--ink);
-      font-size: 14px;
-    }
-    .check input { width: 18px; height: 18px; }
     button {
       width: 100%;
       height: 44px;
@@ -1913,16 +1904,6 @@ INDEX_HTML = r"""<!doctype html>
           <option value="minimal-illustration">极简插画</option>
           <option value="knowledge-card">知识封面</option>
         </select>
-
-        <label class="check"><input id="useLlm" type="checkbox">生成内容</label>
-        <label class="check"><input id="formatGzh" type="checkbox" checked>公众号排版</label>
-        <label class="check"><input id="generateCover" type="checkbox">生成封面</label>
-
-        <label for="wechatContentHtml">已有公众号 HTML</label>
-        <input id="wechatContentHtml" placeholder="output/AI副业_排版_摸鱼绿(moyu-green).html">
-
-        <label for="wechatCoverImage">已有封面图</label>
-        <input id="wechatCoverImage" placeholder="output/AI副业_cover_wechat_thumb.jpg">
 
         <div class="step-buttons">
           <button id="runButton" type="submit" data-step="materials">搜素材</button>
@@ -2152,12 +2133,12 @@ INDEX_HTML = r"""<!doctype html>
         keyword: document.getElementById("keyword").value,
         channel: document.getElementById("channel").value,
         collector: document.getElementById("collector").value,
-        use_llm: document.getElementById("useLlm").checked,
-        format_gzh: document.getElementById("formatGzh").checked,
-        generate_cover: document.getElementById("generateCover").checked,
+        use_llm: false,
+        format_gzh: false,
+        generate_cover: false,
         submit_wechat_draft: false,
-        wechat_content_html: document.getElementById("wechatContentHtml").value,
-        wechat_cover_image: document.getElementById("wechatCoverImage").value,
+        wechat_content_html: "",
+        wechat_cover_image: "",
         format_theme: document.getElementById("formatTheme").value,
         cover_style: document.getElementById("coverStyle").value,
         output_dir: "output"
@@ -2170,8 +2151,6 @@ INDEX_HTML = r"""<!doctype html>
       if (options.collector) document.getElementById("collector").value = options.collector;
       if (options.format_theme) document.getElementById("formatTheme").value = options.format_theme;
       if (options.cover_style) document.getElementById("coverStyle").value = options.cover_style;
-      document.getElementById("wechatContentHtml").value = options.wechat_content_html || "";
-      document.getElementById("wechatCoverImage").value = options.wechat_cover_image || "";
     }
 
     function renderResult(result) {
