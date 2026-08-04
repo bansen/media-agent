@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+from .keyword_intent import extract_keyword_entity, extract_keyword_modifiers
 from .models import ContentChannel
 
 
@@ -53,16 +54,22 @@ def _optimize_ai_side_hustle_title(title: str) -> str:
 
 
 def _optimize_keyword_title(title: str, keyword: str) -> str:
+    clean_keyword = extract_keyword_entity(keyword) or keyword.strip()
+    keyword_modifiers = extract_keyword_modifiers(keyword)
     model_entity = _model_entity_from_source_title(title)
+    if model_entity and ("视频" in keyword_modifiers or "视频" in title):
+        return f"{model_entity}视频能力，先看懂这 3 点"
+    if model_entity and ("核心能力" in keyword_modifiers or _contains_any(title, ["能力", "参数", "API", "工具"])):
+        return f"{model_entity}核心能力，先看懂这 3 点"
     if model_entity and _contains_any(title, ["发布", "上线", "更新", "模型"]):
         return f"{model_entity}有新变化，普通人先看懂这 3 点"
-    if keyword in title and 10 <= len(title) <= 30 and not _contains_any(title, FORBIDDEN_TITLE_TERMS):
+    if clean_keyword in title and 10 <= len(title) <= 30 and not _contains_any(title, FORBIDDEN_TITLE_TERMS):
         return title
     if _contains_any(title, ["架构", "系统", "平台", "工程", "数据", "项目", "技术"]):
-        return f"{keyword}入门：先看懂这 3 个核心问题"
+        return f"{clean_keyword}入门：先看懂这 3 个核心问题"
     if _contains_any(title, ["发布", "更新", "趋势", "报告", "方案"]):
-        return f"{keyword}有新变化，普通人先看懂这 3 点"
-    return f"{keyword}怎么入门？先从这 3 个真实场景开始"
+        return f"{clean_keyword}有新变化，普通人先看懂这 3 点"
+    return f"{clean_keyword}怎么入门？先从这 3 个真实场景开始"
 
 
 def _optimize_health_title(title: str) -> str:

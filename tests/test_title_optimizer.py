@@ -147,6 +147,35 @@ class TitleOptimizerTests(unittest.TestCase):
         self.assertNotIn("minimax h3介绍", optimized_title)
         self.assertTrue(any(term in optimized_title for term in ["发布", "变化", "看懂"]))
 
+    def test_wechat_title_summarizes_descriptive_keyword_instead_of_copying_it(self):
+        candidates = [
+            CandidateContent(
+                title="MiniMax H3官网入口分享:AI视频生成工具到底好不好用?",
+                source="baidu_search",
+                url="https://example.com/minimax-h3-video",
+                heat=75,
+                interaction=70,
+                hook=82,
+                pain=78,
+                reuse=80,
+                material=78,
+            )
+        ]
+
+        result = run_keyword_workflow(
+            "minimax h3介绍，要突出核心能力（如视频相关等）",
+            candidates=candidates,
+            primary_channel="wechat",
+        )
+        optimized_title = result.topics[0].optimized_title
+
+        self.assertIn("MiniMax H3", optimized_title)
+        self.assertIn("视频", optimized_title)
+        self.assertNotIn("介绍", optimized_title)
+        self.assertNotIn("要突出", optimized_title)
+        self.assertNotIn("如视频相关等", optimized_title)
+        self.assertLessEqual(len(optimized_title), 28)
+
 
 if __name__ == "__main__":
     unittest.main()

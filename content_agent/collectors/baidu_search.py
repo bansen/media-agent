@@ -6,10 +6,12 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 from urllib import request
 
+from ..keyword_intent import build_search_queries, clean_search_keyword
 from ..models import CandidateContent
 
 
 BAIDU_WEB_SEARCH_URL = "https://qianfan.baidubce.com/v2/ai_search/web_search"
+MIN_BAIDU_CANDIDATES = 6
 
 
 class BaiduSearchRunner(Protocol):
@@ -37,20 +39,31 @@ class BaiduSearchCollector:
             raise ValueError("keyword cannot be empty")
         if not self.api_key.strip():
             raise RuntimeError("BAIDU_SEARCH_API_KEY is required for baidu_search collector")
-        payload = {
-            "messages": [{"content": clean_keyword, "role": "user"}],
-            "search_source": "baidu_search_v2",
-            "resource_type_filter": [{"type": "web", "top_k": limit}],
-        }
         headers = {
             "Authorization": f"Bearer {self.api_key.strip()}",
             "X-Appbuilder-Authorization": f"Bearer {self.api_key.strip()}",
             "Content-Type": "application/json",
             "User-Agent": "content-agent/0.1",
         }
-        data = (self.runner or UrlLibBaiduSearchRunner()).post_json(BAIDU_WEB_SEARCH_URL, payload, headers)
-        references = data.get("references") or data.get("results") or []
-        return _references_to_candidates(references, keyword=clean_keyword, limit=limit)
+        runner = self.runner or UrlLibBaiduSearchRunner()
+        candidates: list[CandidateContent] = []
+        seen: set[str] = set()
+        target_count = min(limit, MIN_BAIDU_CANDIDATES)
+        for query in build_search_queries(clean_keyword):
+            payload = _search_payload(query, limit=limit)
+            data = runner.post_json(BAIDU_WEB_SEARCH_URL, payload, headers)
+            references = data.get("references") or data.get("results") or []
+            for candidate in _references_to_candidates(references, keyword=query, limit=limit):
+                key = candidate.url or candidate.title
+                if key in seen:
+                    continue
+                seen.add(key)
+                candidates.append(candidate)
+                if len(candidates) >= limit:
+                    return candidates[:limit]
+            if len(candidates) >= target_count:
+                break
+        return candidates[:limit]
 
 
 def collect_baidu_search_candidates(
@@ -60,6 +73,14 @@ def collect_baidu_search_candidates(
     runner: BaiduSearchRunner | None = None,
 ) -> list[CandidateContent]:
     return BaiduSearchCollector(api_key=api_key, runner=runner).collect(keyword, limit=limit)
+
+
+def _search_payload(query: str, limit: int) -> dict[str, Any]:
+    return {
+        "messages": [{"content": clean_search_keyword(query), "role": "user"}],
+        "search_source": "baidu_search_v2",
+        "resource_type_filter": [{"type": "web", "top_k": limit}],
+    }
 
 
 def _references_to_candidates(references: list[dict[str, Any]], keyword: str, limit: int) -> list[CandidateContent]:
