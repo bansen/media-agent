@@ -1,10 +1,30 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import re
 
 
+@dataclass(frozen=True)
+class KeywordIntent:
+    raw_keyword: str
+    topic: str
+    entities: list[str]
+    modifiers: list[str]
+    task_kind: str
+
+
+def parse_keyword_intent(keyword: str) -> KeywordIntent:
+    raw = keyword.strip()
+    entities = extract_keyword_entities(raw)
+    modifiers = extract_keyword_modifiers(raw)
+    topic = clean_search_keyword(raw)
+    task_kind = _task_kind(raw, entities, modifiers)
+    return KeywordIntent(raw_keyword=raw, topic=topic, entities=entities, modifiers=modifiers, task_kind=task_kind)
+
+
 def clean_search_keyword(keyword: str) -> str:
-    entity = extract_keyword_entity(keyword)
+    entities = extract_keyword_entities(keyword)
+    entity = " ".join(entities) if entities else extract_keyword_entity(keyword)
     modifiers = extract_keyword_modifiers(keyword)
     parts = [entity, *[modifier for modifier in modifiers if modifier not in entity]]
     return " ".join(part for part in parts if part).strip() or keyword.strip()
@@ -14,15 +34,41 @@ def extract_keyword_entity(keyword: str) -> str:
     clean = _normalize_space(keyword)
     if not clean:
         return ""
+    entities = extract_keyword_entities(clean)
+    if entities:
+        return entities[0]
     first_clause = re.split(r"[，,；;。]|\b(?:要|希望|突出|关注|侧重|重点)\b", clean, maxsplit=1)[0].strip()
     first_clause = re.sub(r"[（(].*?[）)]", "", first_clause).strip()
     first_clause = re.sub(r"(介绍|入门|教程|怎么用|如何用|是什么)$", "", first_clause, flags=re.IGNORECASE).strip()
     return _normalize_known_entity(first_clause)
 
 
+def extract_keyword_entities(keyword: str) -> list[str]:
+    clean = _normalize_space(keyword)
+    entities: list[str] = []
+    patterns = [
+        (r"(?i)\bdeepseek[-\s]*v4[-\s]*flash\b", "DeepSeek V4 Flash"),
+        (r"(?i)\bdeepseek\b", "DeepSeek"),
+        (r"(?i)\bcodex\b", "Codex"),
+        (r"(?i)\bminimax\s*h\s*3\b", "MiniMax H3"),
+        (r"(?i)\bchatgpt\b", "ChatGPT"),
+        (r"(?i)\bclaude\b", "Claude"),
+    ]
+    for pattern, label in patterns:
+        if re.search(pattern, clean):
+            entities.append(label)
+    if "DeepSeek V4 Flash" in entities:
+        entities = [entity for entity in entities if entity != "DeepSeek"]
+    return _dedupe(entities)
+
+
 def extract_keyword_modifiers(keyword: str) -> list[str]:
     clean = _normalize_space(keyword)
     modifiers: list[str] = []
+    if "接入" in clean or "直连" in clean or "配置" in clean:
+        modifiers.append("接入")
+    if "识图" in clean or "图片识别" in clean or "视觉" in clean:
+        modifiers.append("识图")
     if "核心能力" in clean:
         modifiers.append("核心能力")
     if "视频" in clean:
@@ -74,6 +120,18 @@ def _normalize_known_entity(value: str) -> str:
     clean = re.sub(r"(?i)\bdeepseek\b", "DeepSeek", clean)
     clean = re.sub(r"(?i)\bchatgpt\b", "ChatGPT", clean)
     return clean
+
+
+def _task_kind(keyword: str, entities: list[str], modifiers: list[str]) -> str:
+    if len(entities) >= 2 and any(term in modifiers for term in ["接入", "识图", "API"]):
+        return "tool_integration"
+    if any(term in modifiers for term in ["接入", "识图", "API"]) and entities:
+        return "tool_integration"
+    if entities:
+        return "model_analysis"
+    if any(term in keyword for term in ["副业", "赚钱", "变现", "接单"]):
+        return "side_hustle"
+    return "general"
 
 
 def _dedupe(values: list[str]) -> list[str]:

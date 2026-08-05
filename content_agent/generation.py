@@ -37,6 +37,10 @@ def generate_llm_drafts(
 
 def _wechat_prompt(result: WorkflowResult) -> str:
     topic = result.topics[0]
+    opening_rule = []
+    if "工具接入教程" in result.wechat_outline:
+        opening_rule.append("开头必须直接进入工具接入场景，第一段说明要接入什么、验证什么、读者能得到什么。")
+        opening_rule.append("不要写“学 AI 做作品”、副业、面试、HR、读者投稿等泛用故事。")
     return "\n\n".join(
         [
             "你是公众号内容编辑，请生成一篇可进入草稿箱的中文长文。",
@@ -51,6 +55,7 @@ def _wechat_prompt(result: WorkflowResult) -> str:
                 "输出格式：只输出 Markdown 正文，第一行必须是 # 标题；"
                 "不要输出任何解释、确认语、分隔线、标题：、正文：、可复制到草稿箱等说明文字。"
             ),
+            *opening_rule,
             "要求：标题克制但有点击欲；正文 1200-1800 字；使用小标题；禁止承诺收益；不要承诺日更或固定更新频率。",
         ]
     )

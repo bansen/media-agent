@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from .keyword_intent import extract_keyword_entity, extract_keyword_modifiers
+from .keyword_intent import extract_keyword_entity, extract_keyword_modifiers, parse_keyword_intent
 from .models import ContentChannel
 
 
@@ -23,6 +23,9 @@ def optimize_title(title: str, channel: ContentChannel, keyword: str = "") -> st
     clean_title = clean_source_title(title)
     if channel == "xiaohongshu" or _looks_like_health(clean_title):
         return _sanitize_title(_optimize_health_title(clean_title))
+    intent = parse_keyword_intent(keyword)
+    if intent.task_kind == "tool_integration":
+        return _sanitize_title(_optimize_tool_integration_title(clean_title, intent.entities, intent.modifiers))
     if keyword.strip() and not _looks_like_ai_focus(keyword):
         return _sanitize_title(_optimize_keyword_title(clean_title, keyword.strip()))
     return _sanitize_title(_optimize_ai_side_hustle_title(clean_title))
@@ -70,6 +73,28 @@ def _optimize_keyword_title(title: str, keyword: str) -> str:
     if _contains_any(title, ["发布", "更新", "趋势", "报告", "方案"]):
         return f"{clean_keyword}有新变化，普通人先看懂这 3 点"
     return f"{clean_keyword}怎么入门？先从这 3 个真实场景开始"
+
+
+def _optimize_tool_integration_title(title: str, entities: list[str], modifiers: list[str]) -> str:
+    primary = entities[0] if entities else (_model_entity_from_source_title(title) or "AI 工具")
+    secondary = next((entity for entity in entities[1:] if entity != primary), "")
+    action = "接入"
+    if "识图" in modifiers:
+        focus = "识图"
+    elif "API" in modifiers or "API" in title:
+        focus = "API"
+    else:
+        focus = "能力"
+
+    if secondary and focus == "识图":
+        return f"{primary} 接入 {secondary}，识图怎么跑通？"
+    if secondary:
+        return f"{primary} {action} {secondary}，先看懂这 3 点"
+    if focus == "识图":
+        return f"{primary} 识图能力，怎么跑通？"
+    if focus == "API":
+        return f"{primary} API 接入，先看懂这 3 点"
+    return f"{primary} 核心能力，先看懂这 3 点"
 
 
 def _optimize_health_title(title: str) -> str:

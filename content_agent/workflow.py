@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .keyword_expander import expand_keywords
+from .keyword_intent import clean_search_keyword, parse_keyword_intent
 from .models import CandidateContent, ContentChannel, TopicBrief, WorkflowResult
 from .prompts import (
     build_cover_prompt,
@@ -20,7 +21,8 @@ def run_keyword_workflow(
     if not candidates:
         raise ValueError("candidates cannot be empty")
 
-    expanded_keywords = expand_keywords(keyword, channel=primary_channel)
+    intent = parse_keyword_intent(keyword)
+    expanded_keywords = expand_keywords(intent.topic or keyword, channel=primary_channel)
     topics = sorted(
         (_brief_for(candidate, keyword=keyword, primary_channel=primary_channel) for candidate in candidates),
         key=lambda item: item.score.total + _keyword_relevance_boost(keyword, item.title),
@@ -40,6 +42,7 @@ def run_keyword_workflow(
 
 def _brief_for(candidate: CandidateContent, keyword: str, primary_channel: ContentChannel = "wechat") -> TopicBrief:
     score = score_candidate(candidate)
+    intent = parse_keyword_intent(keyword)
     is_health = _is_health_topic(candidate.title, primary_channel)
     optimized_title = optimize_title(candidate.title, primary_channel, keyword=keyword)
     platform_fit: list[ContentChannel] = ["xiaohongshu"] if is_health else ["wechat"]
@@ -53,21 +56,27 @@ def _brief_for(candidate: CandidateContent, keyword: str, primary_channel: Conte
         source=candidate.source,
         url=candidate.url,
         platform_fit=platform_fit,
-        angle=_angle_for(optimized_title, is_health),
-        material_needs=_material_needs_for(is_health),
+        angle=_angle_for(optimized_title, is_health, keyword),
+        material_needs=_material_needs_for(is_health, intent.task_kind),
         risk_notes=_risk_notes_for(is_health),
     )
 
 
-def _angle_for(title: str, is_health: bool) -> str:
+def _angle_for(title: str, is_health: bool, keyword: str = "") -> str:
     if is_health:
         return f"把《{title}》改成职场女性和宝妈都能立刻收藏的生活习惯清单。"
+    intent = parse_keyword_intent(keyword)
+    if intent.task_kind == "tool_integration":
+        focus = "、".join([*intent.entities, *intent.modifiers])
+        return f"把《{title}》写成工具接入教程，围绕 {focus} 做清晰步骤、验证结果和避坑提醒。"
     return f"把《{title}》改成普通人能执行的副业/AI学习方法拆解。"
 
 
-def _material_needs_for(is_health: bool) -> list[str]:
+def _material_needs_for(is_health: bool, task_kind: str = "general") -> list[str]:
     if is_health:
         return ["生活场景案例", "通用健康常识来源", "可执行习惯清单"]
+    if task_kind == "tool_integration":
+        return ["官方文档或 API 说明", "配置步骤截图", "识图验证样例", "常见报错和解决方法"]
     return ["真实工具截图", "普通人案例", "步骤清单", "失败避坑"]
 
 
@@ -96,15 +105,29 @@ def _is_health_topic(title: str, primary_channel: ContentChannel) -> bool:
 
 
 def _keyword_relevance_boost(keyword: str, title: str) -> float:
-    cleaned_keyword = keyword.strip().lower()
+    intent = parse_keyword_intent(keyword)
+    cleaned_keyword = clean_search_keyword(keyword).strip().lower()
     cleaned_title = title.strip().lower()
     if not cleaned_keyword:
         return 0
+    intent_boost = _intent_coverage_boost(intent.entities, intent.modifiers, cleaned_title)
     if cleaned_keyword in cleaned_title:
-        return 35
+        return 35 + intent_boost
 
     terms = [term for term in _keyword_terms(cleaned_keyword) if term in cleaned_title]
-    return min(24, len(terms) * 8)
+    return min(24, len(terms) * 8) + intent_boost
+
+
+def _intent_coverage_boost(entities: list[str], modifiers: list[str], title: str) -> float:
+    if not entities and not modifiers:
+        return 0
+    normalized_title = _normalize_match_text(title)
+    entity_hits = sum(1 for entity in entities if _normalize_match_text(entity) in normalized_title)
+    modifier_hits = sum(1 for modifier in modifiers if _normalize_match_text(modifier) in normalized_title)
+    boost = entity_hits * 12 + modifier_hits * 6
+    if entities and entity_hits == len(entities):
+        boost += 16
+    return boost
 
 
 def _keyword_terms(keyword: str) -> list[str]:
@@ -114,3 +137,7 @@ def _keyword_terms(keyword: str) -> list[str]:
     if len(keyword) <= 2:
         return [keyword]
     return [keyword[index : index + 2] for index in range(0, len(keyword) - 1)]
+
+
+def _normalize_match_text(text: str) -> str:
+    return text.lower().replace("-", "").replace("_", "").replace(" ", "")

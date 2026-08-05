@@ -61,6 +61,35 @@ class GenerationTests(unittest.TestCase):
         self.assertIn(result.topics[0].optimized_title, llm.prompts[0])
         self.assertIn("禁止泛化成 AI 学习、副业赚钱等无关主题", llm.prompts[0])
 
+    def test_wechat_prompt_uses_tool_integration_positioning(self):
+        result = run_keyword_workflow(
+            "DeepSeek V4 Flash 接入 Codex + 识图，2分钟搞定",
+            [
+                CandidateContent(
+                    title="DeepSeek-V4-Flash正式版API上线公测,Agent能力跃迁并原生适配Codex",
+                    source="baidu_search",
+                    url="https://example.com/codex",
+                    heat=77,
+                    interaction=72,
+                    hook=80,
+                    pain=82,
+                    reuse=86,
+                    material=84,
+                )
+            ],
+        )
+        llm = FakeLLMProvider()
+
+        generate_llm_drafts(result, llm)
+
+        self.assertIn("工具接入教程", llm.prompts[0])
+        self.assertIn("DeepSeek V4 Flash", llm.prompts[0])
+        self.assertIn("Codex", llm.prompts[0])
+        self.assertIn("识图", llm.prompts[0])
+        self.assertIn("开头必须直接进入工具接入场景", llm.prompts[0])
+        self.assertIn("不要写“学 AI 做作品”", llm.prompts[0])
+        self.assertNotIn("待业者", llm.prompts[0])
+
     def test_wechat_article_title_is_forced_to_selected_topic(self):
         result = run_keyword_workflow(
             "minimax h3介绍",

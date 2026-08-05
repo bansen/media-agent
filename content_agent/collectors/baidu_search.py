@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 from urllib import request
 
-from ..keyword_intent import build_search_queries, clean_search_keyword
+from ..keyword_intent import build_search_queries
 from ..models import CandidateContent
 
 
@@ -77,7 +77,7 @@ def collect_baidu_search_candidates(
 
 def _search_payload(query: str, limit: int) -> dict[str, Any]:
     return {
-        "messages": [{"content": clean_search_keyword(query), "role": "user"}],
+        "messages": [{"content": query.strip(), "role": "user"}],
         "search_source": "baidu_search_v2",
         "resource_type_filter": [{"type": "web", "top_k": limit}],
     }

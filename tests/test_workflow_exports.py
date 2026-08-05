@@ -132,6 +132,55 @@ class WorkflowExportTests(unittest.TestCase):
         self.assertIn("选中素材：MiniMax H3正式发布", result.wechat_outline)
         self.assertIn("不要改写成泛泛的 AI 学习或副业赚钱文章", result.wechat_outline)
 
+    def test_tool_integration_keyword_stays_on_deepseek_codex_vision_task(self):
+        candidates = [
+            CandidateContent(
+                title="Codex和DeepSeek-V4-Flash直连的稳定性如何?",
+                source="baidu_search",
+                url="https://example.com/stability",
+                heat=82,
+                interaction=76,
+                hook=74,
+                pain=72,
+                reuse=70,
+                material=76,
+            ),
+            CandidateContent(
+                title="如何使用DeepSeek-V4-Flash的API?",
+                source="baidu_search",
+                url="https://example.com/api",
+                heat=78,
+                interaction=74,
+                hook=84,
+                pain=80,
+                reuse=86,
+                material=82,
+            ),
+            CandidateContent(
+                title="DeepSeek-V4-Flash正式版API上线公测,Agent能力跃迁并原生适配Codex",
+                source="baidu_search",
+                url="https://example.com/codex",
+                heat=77,
+                interaction=72,
+                hook=80,
+                pain=82,
+                reuse=86,
+                material=84,
+            ),
+        ]
+
+        result = run_keyword_workflow("DeepSeek V4 Flash 接入 Codex + 识图，2分钟搞定", candidates, primary_channel="wechat")
+        optimized_title = result.topics[0].optimized_title
+
+        self.assertIn("DeepSeek V4 Flash", optimized_title)
+        self.assertIn("Codex", optimized_title)
+        self.assertIn("识图", optimized_title)
+        self.assertIn("Codex", result.topics[0].title)
+        self.assertNotIn("普通人学 AI", optimized_title)
+        self.assertIn("工具接入教程", result.wechat_outline)
+        self.assertIn("识图验证", result.wechat_outline)
+        self.assertNotIn("副业/AI学习方法拆解", result.wechat_outline)
+
     def test_xiaohongshu_cover_prompt_adapts_to_health_topic(self):
         candidates = [
             CandidateContent(

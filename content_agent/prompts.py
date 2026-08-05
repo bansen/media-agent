@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .keyword_intent import parse_keyword_intent
 from .models import TopicBrief
 
 
@@ -12,16 +13,25 @@ COVER_STYLE_GUIDANCE = {
 
 
 def build_wechat_outline(topic: TopicBrief, keyword: str = "") -> str:
+    intent = parse_keyword_intent(keyword)
     keyword_line = f"用户关键词：{keyword.strip()}" if keyword.strip() else "用户关键词：未提供"
     source_line = f"选中素材：{topic.title}"
+    if intent.task_kind == "tool_integration":
+        positioning = "定位：工具接入教程，写给正在尝试把 AI 模型接入实际工作流的人。"
+        topic_lock = "主题锁定：全文必须围绕工具接入、配置步骤和结果验证展开，不要改写成泛泛的 AI 学习、副业赚钱或人生建议。"
+        structure = "结构：使用场景 -> 准备条件 -> 接入步骤 -> 识图验证 -> 常见问题 -> 行动清单。"
+    else:
+        positioning = "定位：写给想做副业的打工族或待业者。"
+        topic_lock = "主题锁定：全文必须围绕用户关键词和选中素材展开，不要改写成泛泛的 AI 学习或副业赚钱文章。"
+        structure = "结构：痛点开场 -> 真实案例 -> 方法拆解 -> 避坑提醒 -> 行动清单。"
     return "\n".join(
         [
             f"公众号文章：《{topic.optimized_title}》",
             keyword_line,
             source_line,
-            "定位：写给想做副业的打工族或待业者。",
-            "主题锁定：全文必须围绕用户关键词和选中素材展开，不要改写成泛泛的 AI 学习或副业赚钱文章。",
-            "结构：痛点开场 -> 真实案例 -> 方法拆解 -> 避坑提醒 -> 行动清单。",
+            positioning,
+            topic_lock,
+            structure,
             f"角度：{topic.angle}",
             "合规：不承诺收益，不制造暴富焦虑，所有案例需标注来源或改为匿名经验。",
         ]
