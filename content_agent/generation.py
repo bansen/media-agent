@@ -20,10 +20,12 @@ def generate_llm_drafts(
     progress: Callable[[str], None] | None = None,
 ) -> dict[str, str]:
     topic = result.topics[0]
-    prompts = {
-        "wechat_article": _wechat_prompt(result),
-        "xhs_note": _xhs_prompt(result),
-    }
+    channel = _result_channel(result)
+    prompts = {}
+    if channel == "xiaohongshu":
+        prompts["xhs_note"] = _xhs_prompt(result)
+    else:
+        prompts["wechat_article"] = _wechat_prompt(result)
     drafts = {}
     for name, prompt in prompts.items():
         if progress:
@@ -35,6 +37,13 @@ def generate_llm_drafts(
     drafts["selected_topic"] = topic.optimized_title
     drafts["source_topic"] = topic.title
     return drafts
+
+
+def _result_channel(result: WorkflowResult) -> str:
+    brief = result.creative_brief
+    if isinstance(brief, dict):
+        return str(brief.get("channel") or "wechat")
+    return str(getattr(brief, "channel", "wechat") or "wechat")
 
 
 def _wechat_prompt(result: WorkflowResult) -> str:

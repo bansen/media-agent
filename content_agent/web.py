@@ -444,7 +444,7 @@ def run_agent_workflow(options: WebRunOptions, progress: Callable[[str], None] |
         emit(f"正在读取已有公众号 HTML：{content_path}")
         formatted_html = content_path.read_text(encoding="utf-8")
         payload["wechat_content_html"] = str(content_path)
-    elif options.format_gzh or options.submit_wechat_draft:
+    elif options.channel == "wechat" and (options.format_gzh or options.submit_wechat_draft):
         emit("正在进行公众号排版")
         markdown = payload.get("llm_drafts", {}).get("wechat_article") or _wechat_outline_to_markdown(result.wechat_outline)
         formatted_html = format_wechat_markdown(markdown, theme=options.format_theme)
@@ -486,6 +486,8 @@ def run_agent_workflow(options: WebRunOptions, progress: Callable[[str], None] |
         emit("封面生成完成")
 
     if options.submit_wechat_draft:
+        if options.channel != "wechat":
+            raise ValueError("当前渠道不支持提交公众号草稿箱")
         emit("正在提交公众号草稿箱")
         config = AgentConfig.from_env_file()
         published = publish_wechat_draft(
@@ -526,6 +528,8 @@ def run_agent_step(
         return payload
 
     payload = dict(current_result or {})
+    if step == "format" and options.channel != "wechat":
+        raise ValueError("小红书渠道无需公众号排版")
     if step == "content":
         emit("正在读取模型配置")
         config = AgentConfig.from_env_file()
@@ -2065,11 +2069,13 @@ INDEX_HTML = r"""<!doctype html>
       const payload = collectOptions();
       payload.step = "all";
       payload.use_llm = true;
-      payload.format_gzh = true;
+      payload.format_gzh = payload.channel === "wechat";
       payload.generate_cover = true;
       await startNewJob(payload, {
         statusText: "启动中",
-        topicsText: "正在理解创作提示词、收集素材、生成内容、排版和封面。",
+        topicsText: payload.channel === "wechat"
+          ? "正在理解创作提示词、收集素材、生成公众号内容、排版和封面。"
+          : "正在理解创作提示词、收集素材、生成小红书笔记和封面。",
         submitText: "正在一键生成全部内容，完成后可预览并提交。"
       });
     }
@@ -2276,9 +2282,12 @@ INDEX_HTML = r"""<!doctype html>
       `).join("") || '<p class="empty">暂无选题。</p>');
 
       const previewPath = result.gzh_formatting && result.gzh_formatting.preview_html;
+      const xhsNote = result.llm_drafts && result.llm_drafts.xhs_note;
       previewEl.innerHTML = previewPath
         ? `<iframe src="/file?path=${encodeURIComponent(previewPath)}"></iframe><p class="path">${escapeHtml(previewPath)}</p>`
-        : '<p class="empty">没有生成公众号预览。</p>';
+        : xhsNote
+          ? `<pre>${escapeHtml(xhsNote)}</pre>`
+          : '<p class="empty">没有生成预览内容。</p>';
 
       const coverPath = result.cover_image && result.cover_image.path;
       const draft = result.wechat_draft ? JSON.stringify(result.wechat_draft.response, null, 2) : "";

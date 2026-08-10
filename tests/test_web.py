@@ -47,6 +47,9 @@ class WebTests(unittest.TestCase):
         self.assertIn('id="runAllButton"', html)
         self.assertIn('data-step="all"', html)
         self.assertIn("一键生成全部", html)
+        self.assertIn('payload.format_gzh = payload.channel === "wechat"', html)
+        self.assertIn("正在理解创作提示词、收集素材、生成小红书笔记和封面", html)
+        self.assertIn("result.llm_drafts && result.llm_drafts.xhs_note", html)
         self.assertIn("aspect-ratio: 16 / 9", html)
         self.assertIn('data-step="materials"', html)
         self.assertIn('data-step="content"', html)
@@ -350,6 +353,38 @@ class WebTests(unittest.TestCase):
 
         self.assertIn("gzh_formatting", payload)
         self.assertIn("正在进行公众号排版", events)
+
+    def test_run_agent_workflow_skips_gzh_format_for_xiaohongshu_channel(self):
+        candidate = CandidateContent(
+            title="办公室久坐人群，一天 4 个时间点这样调整",
+            source="mock",
+            url="https://example.com/health",
+            heat=88,
+            interaction=82,
+            hook=80,
+            pain=78,
+            reuse=76,
+            material=75,
+        )
+        events = []
+
+        with patch("content_agent.web.collect_baidu_search_candidates", return_value=[candidate]):
+            payload = run_agent_workflow(
+                WebRunOptions(
+                    keyword="健康养生",
+                    channel="xiaohongshu",
+                    collector="baidu_search",
+                    use_llm=False,
+                    format_gzh=True,
+                    generate_cover=False,
+                    submit_wechat_draft=False,
+                    output_dir=Path("output"),
+                ),
+                progress=events.append,
+            )
+
+        self.assertNotIn("gzh_formatting", payload)
+        self.assertNotIn("正在进行公众号排版", events)
 
     def test_web_run_options_persist_format_and_cover_styles(self):
         options = WebRunOptions(

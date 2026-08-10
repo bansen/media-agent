@@ -40,15 +40,25 @@ class GenerationTests(unittest.TestCase):
 
         self.assertTrue(drafts["wechat_article"].startswith(f"# {result.topics[0].optimized_title}"))
         self.assertIn("模型生成内容", drafts["wechat_article"])
-        self.assertEqual(drafts["xhs_note"], "模型生成内容")
+        self.assertNotIn("xhs_note", drafts)
         self.assertNotIn("baijiahao_article", drafts)
-        self.assertEqual(len(llm.prompts), 2)
+        self.assertEqual(len(llm.prompts), 1)
         self.assertIn("公众号", llm.prompts[0])
         self.assertIn("不要承诺日更或固定更新频率", llm.prompts[0])
-        self.assertIn("小红书", llm.prompts[1])
-        self.assertIn("Xiaohongshu Content Skill", llm.prompts[1])
-        self.assertIn("Viral hooks", llm.prompts[1])
-        self.assertIn("封面图组", llm.prompts[1])
+
+    def test_generates_only_xhs_note_for_xiaohongshu_channel(self):
+        result = run_keyword_workflow("养生", get_mock_candidates("养生", channel="xiaohongshu"), primary_channel="xiaohongshu")
+        llm = FakeLLMProvider()
+
+        drafts = generate_llm_drafts(result, llm)
+
+        self.assertEqual(drafts["xhs_note"], "模型生成内容")
+        self.assertNotIn("wechat_article", drafts)
+        self.assertEqual(len(llm.prompts), 1)
+        self.assertIn("小红书", llm.prompts[0])
+        self.assertIn("Xiaohongshu Content Skill", llm.prompts[0])
+        self.assertIn("Viral hooks", llm.prompts[0])
+        self.assertIn("封面图组", llm.prompts[0])
 
     def test_wechat_prompt_locks_keyword_and_selected_material(self):
         result = run_keyword_workflow(
@@ -206,7 +216,6 @@ class GenerationTests(unittest.TestCase):
             events,
             [
                 "Generating wechat_article with LLM",
-                "Generating xhs_note with LLM",
             ],
         )
 
@@ -233,7 +242,7 @@ class GenerationTests(unittest.TestCase):
 
         generate_llm_drafts(result, llm)
 
-        xhs_prompt = llm.prompts[1]
+        xhs_prompt = llm.prompts[0]
         self.assertIn("Treat the user input as a creative brief", xhs_prompt)
         self.assertIn("Health/lifestyle", xhs_prompt)
         self.assertIn("never diagnose", xhs_prompt)
