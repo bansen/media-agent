@@ -247,9 +247,28 @@ class WebTests(unittest.TestCase):
             material=65,
         )
         events = []
+        config = AgentConfig(
+            llm_provider="deepseek",
+            llm_base_url="https://api.deepseek.com",
+            llm_model="deepseek-chat",
+            llm_api_key="",
+            replicate_api_token="",
+            replicate_cover_model_version="",
+            replicate_cover_model="black-forest-labs/flux-1.1-pro",
+            wechat_app_id="",
+            wechat_app_secret="",
+            wechat_access_token="",
+            free_hot_sources=[],
+            database_url="",
+            baidu_search_api_key="baidu-secret",
+            websearch_mcp_enabled=True,
+            tavily_api_key="test-tavily-key",
+        )
 
         with patch("content_agent.web.collect_websearch_mcp_candidates", return_value=[websearch_candidate]), patch(
             "content_agent.web.collect_baidu_search_candidates", return_value=[baidu_candidate]
+        ), patch(
+            "content_agent.web.AgentConfig.from_env_file", return_value=config
         ):
             payload = run_agent_workflow(
                 WebRunOptions(
