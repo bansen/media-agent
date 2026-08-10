@@ -222,6 +222,50 @@ class WebTests(unittest.TestCase):
         self.assertIn("Codex 制作出海网站", payload["topics"][0]["title"])
         self.assertIn("正在用百度搜索收集候选素材", events)
 
+    def test_run_agent_workflow_prefers_websearch_mcp_when_prompt_contains_repo_link(self):
+        websearch_candidate = CandidateContent(
+            title="GitHub 开源项目：bansen/media-agent - AI content agent",
+            source="websearch_mcp",
+            url="https://github.com/bansen/media-agent",
+            heat=96,
+            interaction=90,
+            hook=88,
+            pain=80,
+            reuse=92,
+            material=96,
+            summary="项目：bansen/media-agent；Stars: 1234；README 摘要：公众号草稿箱工作流。",
+        )
+        baidu_candidate = CandidateContent(
+            title="自媒体 AI 工具合集",
+            source="baidu_search",
+            url="https://example.com/tools",
+            heat=70,
+            interaction=65,
+            hook=72,
+            pain=68,
+            reuse=70,
+            material=65,
+        )
+        events = []
+
+        with patch("content_agent.web.collect_websearch_mcp_candidates", return_value=[websearch_candidate]), patch(
+            "content_agent.web.collect_baidu_search_candidates", return_value=[baidu_candidate]
+        ):
+            payload = run_agent_workflow(
+                WebRunOptions(
+                    keyword="帮我写公众号，分享这个项目 https://github.com/bansen/media-agent",
+                    channel="wechat",
+                    collector="baidu_search",
+                    format_gzh=False,
+                ),
+                progress=events.append,
+            )
+
+        self.assertEqual(payload["topics"][0]["source"], "websearch_mcp")
+        self.assertIn("bansen/media-agent", payload["topics"][0]["source_summary"])
+        self.assertIn("正在通过 WebSearch MCP 读取链接内容", events)
+        self.assertIn("正在用百度搜索补充外部素材", events)
+
     def test_web_rejects_paid_public_search_collector(self):
         with self.assertRaisesRegex(ValueError, "collector must be baidu_search"):
             run_agent_workflow(WebRunOptions(keyword="AI副业", channel="wechat", collector="public_search"))

@@ -100,7 +100,14 @@ Configure:
 
 ```env
 BAIDU_SEARCH_API_KEY=your_baidu_qianfan_key
+WEBSEARCH_MCP_ENABLED=true
+WEBSEARCH_MCP_COMMAND=npx
+WEBSEARCH_MCP_ARGS=-y,tavily-mcp@0.1.3
+WEBSEARCH_MCP_TIMEOUT=60
+TAVILY_API_KEY=your_tavily_key
 ```
+
+When the creative prompt contains a URL, for example a GitHub repository or product docs link, the workflow first reads that page through WebSearch MCP and then uses Baidu as supplemental Chinese web material. Ordinary prompts still use Baidu as the primary user-facing source.
 
 Run with:
 

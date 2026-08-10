@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .collectors.free_hot import FreeHotConfig
@@ -25,6 +25,11 @@ class AgentConfig:
     free_hot_sources: list[str]
     database_url: str
     baidu_search_api_key: str = ""
+    websearch_mcp_enabled: bool = False
+    websearch_mcp_command: str = "npx"
+    websearch_mcp_args: list[str] = field(default_factory=lambda: ["-y", "tavily-mcp@0.1.3"])
+    websearch_mcp_timeout: int = 60
+    tavily_api_key: str = ""
     wechat_component_app_id: str = ""
     wechat_component_app_secret: str = ""
     wechat_component_token: str = ""
@@ -56,6 +61,11 @@ class AgentConfig:
             free_hot_sources=_parse_csv(values.get("FREE_HOT_SOURCES", "google_news_rss,hn,github")),
             database_url=values.get("DATABASE_URL", ""),
             baidu_search_api_key=values.get("BAIDU_SEARCH_API_KEY", ""),
+            websearch_mcp_enabled=_parse_bool(values.get("WEBSEARCH_MCP_ENABLED", "")),
+            websearch_mcp_command=values.get("WEBSEARCH_MCP_COMMAND", "npx"),
+            websearch_mcp_args=_parse_csv(values.get("WEBSEARCH_MCP_ARGS", "-y,tavily-mcp@0.1.3")),
+            websearch_mcp_timeout=int(values.get("WEBSEARCH_MCP_TIMEOUT", "60") or "60"),
+            tavily_api_key=values.get("TAVILY_API_KEY", ""),
             wechat_component_app_id=values.get("WECHAT_COMPONENT_APP_ID", ""),
             wechat_component_app_secret=values.get("WECHAT_COMPONENT_APP_SECRET", ""),
             wechat_component_token=values.get("WECHAT_COMPONENT_TOKEN", ""),
@@ -86,6 +96,10 @@ class AgentConfig:
             "WECHAT_COMPONENT_ACCESS_TOKEN": "SET" if self.wechat_component_access_token else "EMPTY",
             "DATABASE_URL": "SET" if self.database_url else "EMPTY",
             "BAIDU_SEARCH_API_KEY": "SET" if self.baidu_search_api_key else "EMPTY",
+            "WEBSEARCH_MCP_ENABLED": "true" if self.websearch_mcp_enabled else "false",
+            "WEBSEARCH_MCP_COMMAND": self.websearch_mcp_command or "EMPTY",
+            "WEBSEARCH_MCP_ARGS": "SET" if self.websearch_mcp_args else "EMPTY",
+            "TAVILY_API_KEY": "SET" if self.tavily_api_key else "EMPTY",
         }
 
     def build_llm_provider(self) -> OpenAICompatibleLLMProvider:
@@ -129,3 +143,7 @@ def _strip_quotes(value: str) -> str:
 
 def _parse_csv(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _parse_bool(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on"}

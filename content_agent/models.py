@@ -19,6 +19,7 @@ class CandidateContent:
     pain: float
     reuse: float
     material: float
+    summary: str = ""
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,7 @@ class TopicBrief:
     angle: str
     material_needs: list[str]
     risk_notes: list[str]
+    source_summary: str = ""
     title_candidates: list[dict[str, Any]] = field(default_factory=list)
 
 

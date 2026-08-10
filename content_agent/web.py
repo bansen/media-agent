@@ -26,6 +26,11 @@ from .auth import (
     parse_wechat_component_event,
 )
 from .collectors.baidu_search import collect_baidu_search_candidates
+from .collectors.websearch_mcp import (
+    StdioMCPToolRunner,
+    collect_websearch_mcp_candidates,
+    extract_prompt_urls,
+)
 from .config import AgentConfig
 from .cover_generation import generate_cover_image
 from .database import (
@@ -416,8 +421,7 @@ def run_agent_workflow(options: WebRunOptions, progress: Callable[[str], None] |
     _validate_options(options)
     emit = progress or (lambda message: None)
 
-    emit("正在用百度搜索收集候选素材")
-    candidates = _collect_candidates(options)
+    candidates = _collect_candidates(options, progress=emit)
     emit(f"已收集 {len(candidates)} 条候选素材")
     if not candidates and options.collector == "baidu_search":
         emit("百度搜索暂无结果，已改用关键词种子选题")
@@ -510,8 +514,7 @@ def run_agent_step(
 
     if step == "materials":
         _validate_options(options)
-        emit("正在用百度搜索收集候选素材")
-        candidates = _collect_candidates(options)
+        candidates = _collect_candidates(options, progress=emit)
         emit(f"已收集 {len(candidates)} 条候选素材")
         if not candidates:
             emit("百度搜索暂无结果，已改用关键词种子选题")
@@ -1239,11 +1242,47 @@ def _step_finished_message(step: StepName) -> str:
     }.get(step, "任务完成")
 
 
-def _collect_candidates(options: WebRunOptions):
+def _collect_candidates(options: WebRunOptions, progress: Callable[[str], None] | None = None):
     config = AgentConfig.from_env_file()
     if options.collector == "baidu_search":
-        return collect_baidu_search_candidates(options.keyword, api_key=config.baidu_search_api_key)
+        emit = progress or (lambda message: None)
+        candidates = []
+        if extract_prompt_urls(options.keyword):
+            emit("正在通过 WebSearch MCP 读取链接内容")
+            candidates.extend(
+                collect_websearch_mcp_candidates(
+                    options.keyword,
+                    runner=_websearch_mcp_runner(config),
+                    limit=4,
+                )
+            )
+            emit("正在用百度搜索补充外部素材")
+        else:
+            emit("正在用百度搜索收集候选素材")
+        candidates.extend(collect_baidu_search_candidates(options.keyword, api_key=config.baidu_search_api_key))
+        return _dedupe_candidates(candidates)
     raise ValueError("collector must be baidu_search")
+
+
+def _websearch_mcp_runner(config: AgentConfig) -> StdioMCPToolRunner:
+    return StdioMCPToolRunner(
+        command=config.websearch_mcp_command,
+        args=config.websearch_mcp_args,
+        env={"TAVILY_API_KEY": config.tavily_api_key},
+        timeout=config.websearch_mcp_timeout,
+    )
+
+
+def _dedupe_candidates(candidates):
+    unique = []
+    seen = set()
+    for candidate in candidates:
+        key = candidate.url or candidate.title
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(candidate)
+    return unique
 
 
 def _to_jsonable(value):
@@ -1295,6 +1334,7 @@ def _topic_brief_from_payload(payload: dict) -> TopicBrief:
         angle=str(payload.get("angle", "")),
         material_needs=list(payload.get("material_needs", [])),
         risk_notes=list(payload.get("risk_notes", [])),
+        source_summary=str(payload.get("source_summary", "")),
         title_candidates=list(payload.get("title_candidates", [])),
     )
 

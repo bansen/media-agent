@@ -67,6 +67,7 @@ def _brief_for(candidate: CandidateContent, keyword: str, primary_channel: Conte
         angle=_angle_for(optimized_title, is_health, keyword),
         material_needs=_material_needs_for(is_health, intent.task_kind),
         risk_notes=_risk_notes_for(is_health),
+        source_summary=candidate.summary,
         title_candidates=title_candidates,
     )
 

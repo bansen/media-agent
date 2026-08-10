@@ -41,10 +41,15 @@ def _wechat_prompt(result: WorkflowResult) -> str:
     if "工具接入教程" in result.wechat_outline:
         opening_rule.append("开头必须直接进入工具接入场景，第一段说明要接入什么、验证什么、读者能得到什么。")
         opening_rule.append("不要写“学 AI 做作品”、副业、面试、HR、读者投稿等泛用故事。")
+    material_summary = []
+    if topic.source_summary.strip():
+        material_summary.append("素材摘要：")
+        material_summary.append(topic.source_summary.strip())
     return "\n\n".join(
         [
             "你是公众号内容编辑，请生成一篇可进入草稿箱的中文长文。",
             result.wechat_outline,
+            *material_summary,
             (
                 "主题约束：必须围绕用户关键词、选中素材和推荐选题写；"
                 f"文章一级标题必须严格使用《{topic.optimized_title}》；"

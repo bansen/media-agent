@@ -28,6 +28,11 @@ class ConfigTests(unittest.TestCase):
                         "WECHAT_COMPONENT_VERIFY_TICKET=component-ticket",
                         "WECHAT_COMPONENT_ACCESS_TOKEN=component-access-token",
                         "BAIDU_SEARCH_API_KEY=baidu-secret",
+                        "WEBSEARCH_MCP_ENABLED=true",
+                        "WEBSEARCH_MCP_COMMAND=npx",
+                        "WEBSEARCH_MCP_ARGS=-y,tavily-mcp@0.1.3",
+                        "WEBSEARCH_MCP_TIMEOUT=45",
+                        "TAVILY_API_KEY=tavily-secret",
                         "PUBLIC_SEARCH_PROVIDER=all",
                         "BING_SEARCH_API_KEY=bing-secret",
                         "NEWSAPI_API_KEY=news-secret",
@@ -53,6 +58,10 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(config.free_hot_sources, ["google_news_rss", "hn", "github"])
             self.assertEqual(config.wechat_component_app_id, "component-appid")
             self.assertEqual(config.baidu_search_api_key, "baidu-secret")
+            self.assertTrue(config.websearch_mcp_enabled)
+            self.assertEqual(config.websearch_mcp_command, "npx")
+            self.assertEqual(config.websearch_mcp_args, ["-y", "tavily-mcp@0.1.3"])
+            self.assertEqual(config.websearch_mcp_timeout, 45)
             self.assertEqual(
                 config.wechat_component_auth_redirect_uri,
                 "https://media-agent.createbeauty.top/auth/wechat-official/callback",
@@ -67,6 +76,8 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(config.redacted_status()["WECHAT_COMPONENT_VERIFY_TICKET"], "SET")
             self.assertEqual(config.redacted_status()["WECHAT_COMPONENT_ACCESS_TOKEN"], "SET")
             self.assertEqual(config.redacted_status()["BAIDU_SEARCH_API_KEY"], "SET")
+            self.assertEqual(config.redacted_status()["TAVILY_API_KEY"], "SET")
+            self.assertEqual(config.redacted_status()["WEBSEARCH_MCP_ENABLED"], "true")
             self.assertNotIn("BING_SEARCH_API_KEY", config.redacted_status())
             self.assertNotIn("NEWSAPI_API_KEY", config.redacted_status())
             self.assertNotIn("PUBLIC_SEARCH_PROVIDER", config.redacted_status())
