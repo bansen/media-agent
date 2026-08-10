@@ -57,6 +57,53 @@ class TitleLabTests(unittest.TestCase):
         self.assertIn("视频", result.topics[0].optimized_title)
         self.assertNotIn("泛泛 AI 学习", result.topics[0].optimized_title)
 
+    def test_workflow_deduplicates_repeated_optimized_titles_from_similar_sources(self):
+        prompt = (
+            "我想写一篇公众号文章，主题是普通人如何用 AI 做副业，"
+            "目标读者是新手，内容要真实、不鸡血，最好有避坑和行动步骤。"
+        )
+        candidates = [
+            CandidateContent(
+                title="苏小兵:别再被 AI 赚钱骗了,2026年普通人最该看清这5个真相?",
+                source="baidu_search",
+                url="https://example.com/a",
+                heat=72,
+                interaction=68,
+                hook=80,
+                pain=86,
+                reuse=76,
+                material=72,
+            ),
+            CandidateContent(
+                title="苏小兵:不用学编程,普通人靠AI赚钱的5种真实方式!",
+                source="baidu_search",
+                url="https://example.com/b",
+                heat=71,
+                interaction=67,
+                hook=79,
+                pain=84,
+                reuse=75,
+                material=72,
+            ),
+            CandidateContent(
+                title="AI副业避坑：这些卖课套路正在收割新人",
+                source="baidu_search",
+                url="https://example.com/c",
+                heat=70,
+                interaction=66,
+                hook=78,
+                pain=85,
+                reuse=74,
+                material=71,
+            ),
+        ]
+
+        result = run_keyword_workflow(prompt, candidates=candidates, primary_channel="wechat")
+        optimized_titles = [topic.optimized_title for topic in result.topics]
+
+        self.assertEqual(len(optimized_titles), len(set(optimized_titles)))
+        self.assertEqual(optimized_titles.count("普通人用 AI 做副业，先避开这 5 个坑"), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

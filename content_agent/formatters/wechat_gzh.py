@@ -241,12 +241,13 @@ def _cover(title: str) -> str:
 
 def _toc(sections: list[dict]) -> str:
     cards = []
-    for index, section in enumerate(sections[:3], start=1):
+    for index, section in enumerate(sections, start=1):
+        part_label = f"PART {index:02d}"
         if index == 1:
             cards.append(
                 f"""
     <section style="display:inline-block;white-space:normal;vertical-align:top;width:110px;background:linear-gradient(135deg,#059669,#10B981);border-radius:12px;padding:12px;margin-right:8px;">
-      <p style="font-size:9px;font-weight:700;color:rgba(255,255,255,0.7);letter-spacing:1px;margin:0 0 5px;"><span leaf="">PART 0{index}</span></p>
+      <p style="font-size:9px;font-weight:700;color:rgba(255,255,255,0.7);letter-spacing:1px;margin:0 0 5px;"><span leaf="">{part_label}</span></p>
       <p style="font-size:13px;font-weight:800;color:#fff;margin:0 0 3px;"><span leaf="">{_text(section["title"])}</span></p>
       <p style="font-size:10px;color:rgba(255,255,255,0.7);margin:0;"><span leaf="">KEY POINT</span></p>
     </section>""".strip()
@@ -255,7 +256,7 @@ def _toc(sections: list[dict]) -> str:
             cards.append(
                 f"""
     <section style="display:inline-block;white-space:normal;vertical-align:top;width:110px;background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:12px;margin-right:8px;box-shadow:0 2px 6px rgba(0,0,0,0.04);">
-      <p style="font-size:9px;font-weight:700;color:#9CA3AF;letter-spacing:1px;margin:0 0 5px;"><span leaf="">PART 0{index}</span></p>
+      <p style="font-size:9px;font-weight:700;color:#9CA3AF;letter-spacing:1px;margin:0 0 5px;"><span leaf="">{part_label}</span></p>
       <p style="font-size:13px;font-weight:800;color:#111827;margin:0 0 3px;"><span leaf="">{_text(section["title"])}</span></p>
       <p style="font-size:10px;color:#9CA3AF;margin:0;"><span leaf="">KEY POINT</span></p>
     </section>""".strip()

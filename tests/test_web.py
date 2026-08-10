@@ -65,6 +65,7 @@ class WebTests(unittest.TestCase):
         self.assertIn('href="/auth/wechat-official/start"', html)
         self.assertIn("授权公众号", html)
         self.assertNotIn('id="submitWechatDraft"', html)
+        self.assertIn("index === 0 ? renderTitleLab", html)
 
     def test_run_agent_workflow_exposes_creative_brief_and_title_candidates(self):
         candidate = CandidateContent(

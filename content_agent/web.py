@@ -2221,7 +2221,7 @@ INDEX_HTML = r"""<!doctype html>
           ${(brief.tone || []).length ? `<br><strong>写作语气：</strong>${escapeHtml((brief.tone || []).join("、"))}` : ""}
         </div>
       ` : "";
-      topicsEl.innerHTML = briefHtml + ((result.topics || []).map(topic => `
+      topicsEl.innerHTML = briefHtml + ((result.topics || []).map((topic, index) => `
         <div class="topic">
           <div class="topic-title" title="${escapeHtml(topic.optimized_title || topic.title)}">${escapeHtml(topic.optimized_title || topic.title)}</div>
           <div class="meta">
@@ -2229,7 +2229,7 @@ INDEX_HTML = r"""<!doctype html>
             <span>${escapeHtml(topic.score.level)} · ${topic.score.total}</span>
             ${topic.optimized_title ? `<span class="source-title" title="${escapeHtml(topic.title)}">来源：${escapeHtml(topic.title)}</span>` : ""}
           </div>
-          ${renderTitleLab(topic.title_candidates || [])}
+          ${index === 0 ? renderTitleLab(topic.title_candidates || []) : ""}
         </div>
       `).join("") || '<p class="empty">暂无选题。</p>');
 

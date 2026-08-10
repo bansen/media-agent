@@ -60,6 +60,36 @@ class WeChatGzhFormattingTests(unittest.TestCase):
         self.assertNotIn("每天分享一个 AI 副业避坑指南", html)
         self.assertIn("关注我，一起拆解 AI 工具、副业实践和普通人的学习路径", html)
 
+    def test_toc_slider_card_count_matches_article_sections(self):
+        html = format_wechat_markdown(
+            """# 普通人做 AI 副业，先避开这 5 个坑
+
+## 第一坑
+
+正文。
+
+## 第二坑
+
+正文。
+
+## 第三坑
+
+正文。
+
+## 第四坑
+
+正文。
+
+## 第五坑
+
+正文。
+"""
+        )
+
+        self.assertIn("📦 5 Parts", html)
+        self.assertEqual(html.count("width:110px"), 5)
+        self.assertIn("PART 05", html)
+
     def test_cover_title_keeps_full_long_title(self):
         html = format_wechat_markdown("# 别再问“AI能干嘛”了，MiniMax H3的新模型\n\n## 第一节\n\n正文内容。")
 

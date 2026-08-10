@@ -26,11 +26,12 @@ def run_keyword_workflow(
     intent = parse_keyword_intent(keyword)
     creative_brief = build_creative_brief(keyword, channel=primary_channel)
     expanded_keywords = expand_keywords(intent.topic or keyword, channel=primary_channel)
-    topics = sorted(
+    ranked_topics = sorted(
         (_brief_for(candidate, keyword=keyword, primary_channel=primary_channel) for candidate in candidates),
         key=lambda item: item.score.total + _keyword_relevance_boost(keyword, item.title),
         reverse=True,
     )
+    topics = _dedupe_topics_by_optimized_title(ranked_topics)
     selected = topics[0]
     cover_strategy = build_cover_strategy(selected, creative_brief, channel=primary_channel)
 
@@ -68,6 +69,18 @@ def _brief_for(candidate: CandidateContent, keyword: str, primary_channel: Conte
         risk_notes=_risk_notes_for(is_health),
         title_candidates=title_candidates,
     )
+
+
+def _dedupe_topics_by_optimized_title(topics: list[TopicBrief]) -> list[TopicBrief]:
+    unique: list[TopicBrief] = []
+    seen: set[str] = set()
+    for topic in topics:
+        key = _normalize_match_text(topic.optimized_title)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(topic)
+    return unique
 
 
 def _angle_for(title: str, is_health: bool, keyword: str = "") -> str:
