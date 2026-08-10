@@ -28,6 +28,8 @@ class WebTests(unittest.TestCase):
         html = render_index_html()
 
         self.assertIn('id="keyword"', html)
+        self.assertIn("创作提示词", html)
+        self.assertIn("把你想写什么、给谁看、希望什么风格写清楚", html)
         self.assertIn('value="baidu_search"', html)
         self.assertNotIn('value="free_hot"', html)
         self.assertNotIn('value="mock"', html)
@@ -63,6 +65,34 @@ class WebTests(unittest.TestCase):
         self.assertIn('href="/auth/wechat-official/start"', html)
         self.assertIn("授权公众号", html)
         self.assertNotIn('id="submitWechatDraft"', html)
+
+    def test_run_agent_workflow_exposes_creative_brief_and_title_candidates(self):
+        candidate = CandidateContent(
+            title="AI副业避坑：这些卖课套路正在收割新人",
+            source="baidu_search",
+            url="https://example.com/risk",
+            heat=86,
+            interaction=80,
+            hook=84,
+            pain=88,
+            reuse=80,
+            material=76,
+        )
+
+        with patch("content_agent.web.collect_baidu_search_candidates", return_value=[candidate]):
+            payload = run_agent_workflow(
+                WebRunOptions(
+                    keyword="帮我写公众号，主题是 AI 接单怎么找到第一单，目标读者是新手，要求真实案例和避坑",
+                    channel="wechat",
+                    collector="baidu_search",
+                    format_gzh=False,
+                )
+            )
+
+        self.assertEqual(payload["creative_brief"]["topic"], "AI 接单怎么找到第一单")
+        self.assertGreaterEqual(len(payload["topics"][0]["title_candidates"]), 5)
+        self.assertIn("cover_strategy", payload)
+        self.assertIn("AI 接单怎么找到第一单", payload["cover_strategy"]["core_message"])
 
     def test_landing_html_introduces_product_with_platform_neutral_ctas(self):
         html = render_landing_html()

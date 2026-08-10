@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+from .creative_brief import build_creative_brief, is_creative_prompt
 from .keyword_expander import expand_keywords
 from .keyword_intent import clean_search_keyword, parse_keyword_intent
 from .models import CandidateContent, ContentChannel, TopicBrief, WorkflowResult
 from .prompts import (
-    build_cover_prompt,
+    build_cover_prompt_from_strategy,
+    build_cover_strategy,
     build_wechat_outline,
     build_xhs_package,
 )
 from .scoring import score_candidate
-from .title_optimizer import optimize_title
+from .title_optimizer import build_title_candidates, optimize_title
 
 
 def run_keyword_workflow(
@@ -22,6 +24,7 @@ def run_keyword_workflow(
         raise ValueError("candidates cannot be empty")
 
     intent = parse_keyword_intent(keyword)
+    creative_brief = build_creative_brief(keyword, channel=primary_channel)
     expanded_keywords = expand_keywords(intent.topic or keyword, channel=primary_channel)
     topics = sorted(
         (_brief_for(candidate, keyword=keyword, primary_channel=primary_channel) for candidate in candidates),
@@ -29,14 +32,17 @@ def run_keyword_workflow(
         reverse=True,
     )
     selected = topics[0]
+    cover_strategy = build_cover_strategy(selected, creative_brief, channel=primary_channel)
 
     return WorkflowResult(
         keyword=keyword,
-        expanded_keywords=expanded_keywords,
+        expanded_keywords=creative_brief.search_queries if is_creative_prompt(keyword) else expanded_keywords,
         topics=topics[:limit],
         wechat_outline=build_wechat_outline(selected, keyword=keyword),
         xhs_package=build_xhs_package(selected),
-        cover_prompt=build_cover_prompt(selected, channel=primary_channel),
+        cover_prompt=build_cover_prompt_from_strategy(selected, cover_strategy, channel=primary_channel),
+        creative_brief=creative_brief,
+        cover_strategy=cover_strategy,
     )
 
 
@@ -45,6 +51,7 @@ def _brief_for(candidate: CandidateContent, keyword: str, primary_channel: Conte
     intent = parse_keyword_intent(keyword)
     is_health = _is_health_topic(candidate.title, primary_channel)
     optimized_title = optimize_title(candidate.title, primary_channel, keyword=keyword)
+    title_candidates = build_title_candidates(candidate.title, primary_channel, keyword=keyword)
     platform_fit: list[ContentChannel] = ["xiaohongshu"] if is_health else ["wechat"]
     if not is_health and score.total >= 75:
         platform_fit.append("xiaohongshu")
@@ -59,6 +66,7 @@ def _brief_for(candidate: CandidateContent, keyword: str, primary_channel: Conte
         angle=_angle_for(optimized_title, is_health, keyword),
         material_needs=_material_needs_for(is_health, intent.task_kind),
         risk_notes=_risk_notes_for(is_health),
+        title_candidates=title_candidates,
     )
 
 

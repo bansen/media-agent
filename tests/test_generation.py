@@ -61,6 +61,37 @@ class GenerationTests(unittest.TestCase):
         self.assertIn(result.topics[0].optimized_title, llm.prompts[0])
         self.assertIn("禁止泛化成 AI 学习、副业赚钱等无关主题", llm.prompts[0])
 
+    def test_wechat_prompt_uses_creative_brief_not_only_keyword_lock(self):
+        prompt = (
+            "我想写一篇公众号文章，主题是普通人如何用 AI 做副业，"
+            "目标读者是想赚钱但没方向的打工族，内容要真实、不鸡血，最好有避坑和行动步骤。"
+        )
+        result = run_keyword_workflow(
+            prompt,
+            [
+                CandidateContent(
+                    title="AI副业避坑：这些卖课套路正在收割新人",
+                    source="baidu_search",
+                    url="https://example.com/risk",
+                    heat=86,
+                    interaction=80,
+                    hook=84,
+                    pain=88,
+                    reuse=80,
+                    material=76,
+                )
+            ],
+        )
+        llm = FakeLLMProvider()
+
+        generate_llm_drafts(result, llm)
+
+        self.assertIn("创作主题：普通人如何用 AI 做副业", llm.prompts[0])
+        self.assertIn("目标读者：想赚钱但没方向的打工族", llm.prompts[0])
+        self.assertIn("写作角度：避坑、行动步骤", llm.prompts[0])
+        self.assertIn("写作语气：真实、不鸡血", llm.prompts[0])
+        self.assertIn("必须先回应创作主题和目标读者", llm.prompts[0])
+
     def test_wechat_prompt_uses_tool_integration_positioning(self):
         result = run_keyword_workflow(
             "DeepSeek V4 Flash 接入 Codex + 识图，2分钟搞定",

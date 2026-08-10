@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 from typing import Literal
 
 
@@ -38,6 +39,7 @@ class TopicBrief:
     angle: str
     material_needs: list[str]
     risk_notes: list[str]
+    title_candidates: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -48,3 +50,5 @@ class WorkflowResult:
     wechat_outline: str
     xhs_package: str
     cover_prompt: str
+    creative_brief: Any | None = None
+    cover_strategy: dict[str, str] = field(default_factory=dict)

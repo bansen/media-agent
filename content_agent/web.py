@@ -1274,6 +1274,8 @@ def _workflow_result_from_payload(payload: dict) -> WorkflowResult:
         wechat_outline=str(payload.get("wechat_outline", "")),
         xhs_package=str(payload.get("xhs_package", "")),
         cover_prompt=str(payload.get("cover_prompt", "")),
+        creative_brief=payload.get("creative_brief"),
+        cover_strategy=dict(payload.get("cover_strategy") or {}),
     )
 
 
@@ -1293,6 +1295,7 @@ def _topic_brief_from_payload(payload: dict) -> TopicBrief:
         angle=str(payload.get("angle", "")),
         material_needs=list(payload.get("material_needs", [])),
         risk_notes=list(payload.get("risk_notes", [])),
+        title_candidates=list(payload.get("title_candidates", [])),
     )
 
 
@@ -1735,9 +1738,8 @@ INDEX_HTML = r"""<!doctype html>
     .account-links { display: flex; flex-wrap: wrap; gap: 10px; margin: -12px 0 22px; }
     .account-links a { color: var(--green-dark); font-size: 13px; font-weight: 800; text-decoration: none; }
     label { display: block; color: var(--muted); font-size: 12px; font-weight: 700; margin: 14px 0 6px; }
-    input, select {
+    input, textarea, select {
       width: 100%;
-      height: 40px;
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 0 12px;
@@ -1746,7 +1748,15 @@ INDEX_HTML = r"""<!doctype html>
       font-size: 14px;
       outline: none;
     }
-    input:focus, select:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(15, 138, 95, 0.12); }
+    input, select { height: 40px; }
+    textarea {
+      min-height: 112px;
+      padding: 10px 12px;
+      line-height: 1.55;
+      resize: vertical;
+      font-family: inherit;
+    }
+    input:focus, textarea:focus, select:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(15, 138, 95, 0.12); }
     button {
       width: 100%;
       height: 44px;
@@ -1806,6 +1816,26 @@ INDEX_HTML = r"""<!doctype html>
     .topic-title { font-size: 14px; font-weight: 800; line-height: 1.45; overflow-wrap: anywhere; word-break: break-word; }
     .source-title { width: 100%; overflow-wrap: anywhere; word-break: break-word; }
     .meta { margin-top: 8px; color: var(--muted); font-size: 12px; display: flex; gap: 10px; flex-wrap: wrap; }
+    .brief {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #f8fbf7;
+      color: #29322f;
+      font-size: 12px;
+      line-height: 1.6;
+      overflow-wrap: anywhere;
+    }
+    .title-lab { margin-top: 10px; display: grid; gap: 6px; }
+    .title-option {
+      padding: 7px 8px;
+      border-radius: 6px;
+      background: #f7f8f3;
+      color: #29322f;
+      font-size: 12px;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
     iframe {
       width: 100%;
       height: 540px;
@@ -1870,15 +1900,16 @@ INDEX_HTML = r"""<!doctype html>
   <div class="shell">
     <aside>
       <h1>Content Agent 内容工作台</h1>
-      <p class="sub">关键词到选题、内容、排版、封面和草稿箱的本地工作台。</p>
+      <p class="sub">从创作提示词到选题、内容、排版、封面和草稿箱的本地工作台。</p>
       <div class="account-links">
         <a href="/auth/wechat-official/start">授权公众号</a>
         <a href="/settings/wechat">公众号参数</a>
         <a href="/auth/logout">退出登录</a>
       </div>
       <form id="runForm">
-        <label for="keyword">关键词</label>
-        <input id="keyword" name="keyword" value="AI副业" autocomplete="off">
+        <label for="keyword">创作提示词</label>
+        <textarea id="keyword" name="keyword" autocomplete="off">我想写一篇公众号文章，主题是普通人如何用 AI 做副业，目标读者是想赚钱但没方向的打工族，内容要真实、不鸡血，最好有避坑和行动步骤。</textarea>
+        <p class="empty" style="margin-top:6px;">把你想写什么、给谁看、希望什么风格写清楚。</p>
 
         <label for="channel">渠道</label>
         <select id="channel" name="channel">
@@ -1929,8 +1960,8 @@ INDEX_HTML = r"""<!doctype html>
           <div id="events" class="events"><p class="empty">等待运行。</p></div>
         </section>
         <section class="panel">
-          <h2>选题评分</h2>
-          <div id="topics" class="topics"><p class="empty">运行后展示候选选题。</p></div>
+          <h2>选题与标题</h2>
+          <div id="topics" class="topics"><p class="empty">运行后展示创作 brief、候选选题和标题实验室。</p></div>
         </section>
       </div>
       <div class="grid" style="margin-top:18px;">
@@ -1996,7 +2027,7 @@ INDEX_HTML = r"""<!doctype html>
       payload.generate_cover = true;
       await startNewJob(payload, {
         statusText: "启动中",
-        topicsText: "正在收集素材、生成内容、排版和封面。",
+        topicsText: "正在理解创作提示词、收集素材、生成内容、排版和封面。",
         submitText: "正在一键生成全部内容，完成后可预览并提交。"
       });
     }
@@ -2009,7 +2040,7 @@ INDEX_HTML = r"""<!doctype html>
       payload.generate_cover = false;
       await startNewJob(payload, {
         statusText: "启动中",
-        topicsText: "正在收集和评分。",
+        topicsText: "正在理解提示词、收集素材和生成标题候选。",
         submitText: "先生成预览，确认无误后再提交。"
       });
     }
@@ -2127,7 +2158,7 @@ INDEX_HTML = r"""<!doctype html>
         const active = job.id === currentJobId ? " active" : "";
         return `
           <button class="history-item${active}" type="button" data-job-id="${escapeHtml(job.id)}">
-            <div class="history-title">${escapeHtml(options.keyword || job.result?.keyword || "未命名内容")}</div>
+            <div class="history-title">${escapeHtml(job.result?.creative_brief?.topic || options.keyword || job.result?.keyword || "未命名内容")}</div>
             <div class="history-meta">
               <span>${escapeHtml(options.channel || "")}</span>
               <span>${escapeHtml(statusLabel(job.status))}</span>
@@ -2181,7 +2212,16 @@ INDEX_HTML = r"""<!doctype html>
     }
 
     function renderResult(result) {
-      topicsEl.innerHTML = (result.topics || []).map(topic => `
+      const brief = result.creative_brief || {};
+      const briefHtml = brief.topic ? `
+        <div class="brief">
+          <strong>创作主题：</strong>${escapeHtml(brief.topic)}
+          ${brief.audience ? `<br><strong>目标读者：</strong>${escapeHtml(brief.audience)}` : ""}
+          ${(brief.angles || []).length ? `<br><strong>写作角度：</strong>${escapeHtml((brief.angles || []).join("、"))}` : ""}
+          ${(brief.tone || []).length ? `<br><strong>写作语气：</strong>${escapeHtml((brief.tone || []).join("、"))}` : ""}
+        </div>
+      ` : "";
+      topicsEl.innerHTML = briefHtml + ((result.topics || []).map(topic => `
         <div class="topic">
           <div class="topic-title" title="${escapeHtml(topic.optimized_title || topic.title)}">${escapeHtml(topic.optimized_title || topic.title)}</div>
           <div class="meta">
@@ -2189,8 +2229,9 @@ INDEX_HTML = r"""<!doctype html>
             <span>${escapeHtml(topic.score.level)} · ${topic.score.total}</span>
             ${topic.optimized_title ? `<span class="source-title" title="${escapeHtml(topic.title)}">来源：${escapeHtml(topic.title)}</span>` : ""}
           </div>
+          ${renderTitleLab(topic.title_candidates || [])}
         </div>
-      `).join("") || '<p class="empty">暂无选题。</p>';
+      `).join("") || '<p class="empty">暂无选题。</p>');
 
       const previewPath = result.gzh_formatting && result.gzh_formatting.preview_html;
       previewEl.innerHTML = previewPath
@@ -2205,6 +2246,13 @@ INDEX_HTML = r"""<!doctype html>
         result.wechat_draft_error ? `<p class="error">${escapeHtml(result.wechat_draft_error)}</p>` : ""
       ].filter(Boolean).join("") || '<p class="empty">没有封面或草稿结果。</p>';
       renderSubmitGate(result);
+    }
+
+    function renderTitleLab(candidates) {
+      if (!candidates.length) return "";
+      return `<div class="title-lab">${candidates.slice(0, 5).map((item, index) => `
+        <div class="title-option">${index + 1}. ${escapeHtml(item.title)} · ${escapeHtml(item.reason || "")}</div>
+      `).join("")}</div>`;
     }
 
     function setBusy(isBusy) {

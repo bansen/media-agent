@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
+from .creative_brief import build_creative_brief, is_creative_prompt
+
 
 @dataclass(frozen=True)
 class KeywordIntent:
@@ -23,6 +25,9 @@ def parse_keyword_intent(keyword: str) -> KeywordIntent:
 
 
 def clean_search_keyword(keyword: str) -> str:
+    brief = build_creative_brief(keyword)
+    if is_creative_prompt(keyword) and brief.topic:
+        return brief.topic
     entities = extract_keyword_entities(keyword)
     entity = " ".join(entities) if entities else extract_keyword_entity(keyword)
     modifiers = extract_keyword_modifiers(keyword)
@@ -85,6 +90,9 @@ def extract_keyword_modifiers(keyword: str) -> list[str]:
 
 
 def build_search_queries(keyword: str) -> list[str]:
+    brief = build_creative_brief(keyword)
+    if is_creative_prompt(keyword) and brief.search_queries:
+        return brief.search_queries
     primary = clean_search_keyword(keyword)
     entity = extract_keyword_entity(keyword) or primary
     modifiers = extract_keyword_modifiers(keyword)

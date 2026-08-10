@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .creative_brief import CreativeBrief, build_creative_brief
 from .keyword_intent import parse_keyword_intent
 from .models import TopicBrief
 
@@ -14,20 +15,24 @@ COVER_STYLE_GUIDANCE = {
 
 def build_wechat_outline(topic: TopicBrief, keyword: str = "") -> str:
     intent = parse_keyword_intent(keyword)
+    brief = build_creative_brief(keyword)
     keyword_line = f"用户关键词：{keyword.strip()}" if keyword.strip() else "用户关键词：未提供"
+    brief_lines = _creative_brief_lines(brief)
     source_line = f"选中素材：{topic.title}"
     if intent.task_kind == "tool_integration":
         positioning = "定位：工具接入教程，写给正在尝试把 AI 模型接入实际工作流的人。"
         topic_lock = "主题锁定：全文必须围绕工具接入、配置步骤和结果验证展开，不要改写成泛泛的 AI 学习、副业赚钱或人生建议。"
         structure = "结构：使用场景 -> 准备条件 -> 接入步骤 -> 识图验证 -> 常见问题 -> 行动清单。"
     else:
-        positioning = "定位：写给想做副业的打工族或待业者。"
-        topic_lock = "主题锁定：全文必须围绕用户关键词和选中素材展开，不要改写成泛泛的 AI 学习或副业赚钱文章。"
-        structure = "结构：痛点开场 -> 真实案例 -> 方法拆解 -> 避坑提醒 -> 行动清单。"
+        audience = brief.audience or "想做副业的打工族或待业者"
+        positioning = f"定位：写给{audience}。"
+        topic_lock = "主题锁定：全文必须先回应创作主题和目标读者，再结合选中素材展开，不要改写成泛泛的 AI 学习或副业赚钱文章。"
+        structure = _structure_for(brief)
     return "\n".join(
         [
             f"公众号文章：《{topic.optimized_title}》",
             keyword_line,
+            *brief_lines,
             source_line,
             positioning,
             topic_lock,
@@ -58,6 +63,35 @@ def build_cover_prompt(topic: TopicBrief, channel: str = "wechat") -> str:
         "Replicate image prompt: "
         f"{style}. Main idea: {topic.optimized_title}. "
         "Use a complete background scene with balanced composition and subtle clear area formed by natural lighting only. "
+        "No text, no blank white rectangle, no paper sheet, no poster board, no floating card, "
+        "no money piles, no medical claims, no exaggerated symbols."
+    )
+
+
+def build_cover_strategy(topic: TopicBrief, brief: CreativeBrief, channel: str = "wechat") -> dict[str, str]:
+    core_message = brief.topic or topic.optimized_title
+    audience = brief.audience or ("20-45 岁职场女性或宝妈" if channel == "xiaohongshu" else "普通内容创作者")
+    emotion = _cover_emotion_for(topic, brief, channel)
+    scene = _cover_scene_for(topic, brief, channel)
+    return {
+        "core_message": core_message,
+        "audience": audience,
+        "emotion": emotion,
+        "scene": scene,
+        "avoid": "文字、白色卡片、纸张、海报板、夸张金钱符号、医疗承诺",
+    }
+
+
+def build_cover_prompt_from_strategy(topic: TopicBrief, strategy: dict[str, str], channel: str = "wechat") -> str:
+    style = _cover_style_for(topic, channel)
+    return (
+        "Replicate image prompt: "
+        f"{style}. Main idea: {topic.optimized_title}. "
+        f"Core message: {strategy.get('core_message', topic.optimized_title)}. "
+        f"Audience mood: {strategy.get('emotion', 'practical and clear')}. "
+        f"Scene concept: {strategy.get('scene', 'complete realistic editorial scene')}. "
+        "Use a complete background scene with balanced composition, vivid subject, sharp details, "
+        "natural negative space for later title overlay, 1600x900 high-resolution output. "
         "No text, no blank white rectangle, no paper sheet, no poster board, no floating card, "
         "no money piles, no medical claims, no exaggerated symbols."
     )
@@ -112,3 +146,48 @@ def _cover_style_for(topic: TopicBrief, channel: str) -> str:
 
 def _contains_any(text: str, terms: list[str]) -> bool:
     return any(term in text for term in terms)
+
+
+def _creative_brief_lines(brief: CreativeBrief) -> list[str]:
+    lines = []
+    if brief.topic:
+        lines.append(f"创作主题：{brief.topic}")
+    if brief.audience:
+        lines.append(f"目标读者：{brief.audience}")
+    if brief.angles:
+        lines.append(f"写作角度：{'、'.join(brief.angles)}")
+    if brief.tone:
+        lines.append(f"写作语气：{'、'.join(brief.tone)}")
+    return lines
+
+
+def _structure_for(brief: CreativeBrief) -> str:
+    if "避坑" in brief.angles and "行动步骤" in brief.angles:
+        return "结构：痛点开场 -> 为什么会踩坑 -> 真实素材拆解 -> 可执行步骤 -> 避坑清单 -> 行动建议。"
+    if "真实案例" in brief.angles:
+        return "结构：真实场景开场 -> 案例拆解 -> 方法提炼 -> 适用边界 -> 行动清单。"
+    return "结构：痛点开场 -> 真实素材 -> 方法拆解 -> 避坑提醒 -> 行动清单。"
+
+
+def _cover_emotion_for(topic: TopicBrief, brief: CreativeBrief, channel: str) -> str:
+    text = f"{topic.optimized_title} {brief.topic} {' '.join(brief.angles)}"
+    if channel == "xiaohongshu":
+        return "warm, relaxed, useful, easy to save"
+    if _contains_any(text, ["避坑", "坑", "风险", "误区"]):
+        return "clear-minded, practical, alert but not anxious"
+    if _contains_any(text, ["第一单", "行动步骤", "步骤", "接单"]):
+        return "focused, actionable, quietly optimistic"
+    return "professional, useful, calm"
+
+
+def _cover_scene_for(topic: TopicBrief, brief: CreativeBrief, channel: str) -> str:
+    text = f"{topic.optimized_title} {topic.title} {brief.topic}"
+    if channel == "xiaohongshu":
+        return "bright lived-in lifestyle scene matching the daily habit topic"
+    if _contains_any(text, ["视频", "创作者"]):
+        return "creator desk with laptop timeline interface glow, camera or phone nearby, active planning moment"
+    if _contains_any(text, ["接单", "副业", "第一单"]):
+        return "independent creator workspace, laptop and notebook showing planning flow, believable evening work scene"
+    if _contains_any(text, ["接入", "API", "Codex", "DeepSeek"]):
+        return "developer workspace with code editor and image preview on screen, clean technical atmosphere"
+    return "modern editorial workspace connected to the article topic"
