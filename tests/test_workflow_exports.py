@@ -111,6 +111,37 @@ class WorkflowExportTests(unittest.TestCase):
         self.assertIn("abstract software interfaces", prompt)
         self.assertNotIn("money piles", prompt.replace("no money piles", ""))
 
+    def test_wechat_cover_prompt_adapts_to_github_agent_project(self):
+        candidates = [
+            CandidateContent(
+                title="GitHub 开源项目：huangruiteng/loopx - 项目资料",
+                source="websearch_mcp",
+                url="https://github.com/huangruiteng/loopx/blob/main/README.zh-CN.md",
+                heat=92,
+                interaction=88,
+                hook=84,
+                pain=80,
+                reuse=92,
+                material=96,
+                summary="LoopX 给现有 Agent 补上一层长期工作控制系统，让 Codex、Claude Code 这类 Agent 更接近真正的数字员工。",
+            )
+        ]
+
+        result = run_keyword_workflow(
+            "写一篇分享 https://github.com/huangruiteng/loopx/blob/main/README.zh-CN.md 的文章",
+            candidates=candidates,
+            primary_channel="wechat",
+        )
+        prompt = result.cover_prompt.lower()
+
+        self.assertIn("open-source agent system", prompt)
+        self.assertIn("workflow nodes", prompt)
+        self.assertIn("automation timeline", prompt)
+        self.assertNotIn("office desk", prompt)
+        self.assertNotIn("desk lamp", prompt)
+        self.assertNotIn("分享 的文章", result.cover_prompt)
+        self.assertNotIn("github.com", result.cover_prompt)
+
     def test_wechat_outline_keeps_keyword_and_selected_material_context(self):
         candidates = [
             CandidateContent(

@@ -87,6 +87,8 @@ def _dedupe_topics_by_optimized_title(topics: list[TopicBrief]) -> list[TopicBri
 def _angle_for(title: str, is_health: bool, keyword: str = "") -> str:
     if is_health:
         return f"把《{title}》改成职场女性和宝妈都能立刻收藏的生活习惯清单。"
+    if _is_github_project_topic(title, keyword):
+        return f"把《{title}》写成开源项目解读：先讲痛点，再讲项目定位、关键机制、适用人群和项目地址。"
     intent = parse_keyword_intent(keyword)
     if intent.task_kind == "tool_integration":
         focus = "、".join([*intent.entities, *intent.modifiers])
@@ -124,6 +126,11 @@ def _is_health_topic(title: str, primary_channel: ContentChannel) -> bool:
         "习惯",
     ]
     return any(term in title for term in health_terms)
+
+
+def _is_github_project_topic(title: str, keyword: str) -> bool:
+    text = f"{title} {keyword}"
+    return "github.com" in text.lower() or "开源项目" in text
 
 
 def _keyword_relevance_boost(keyword: str, title: str) -> float:

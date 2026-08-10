@@ -121,6 +121,38 @@ class GenerationTests(unittest.TestCase):
         self.assertIn("不要写“学 AI 做作品”", llm.prompts[0])
         self.assertNotIn("待业者", llm.prompts[0])
 
+    def test_wechat_prompt_uses_github_project_article_structure(self):
+        result = run_keyword_workflow(
+            "写一篇分享 https://github.com/huangruiteng/loopx/blob/main/README.zh-CN.md 的文章",
+            [
+                CandidateContent(
+                    title="GitHub 开源项目：huangruiteng/loopx - 项目资料",
+                    source="websearch_mcp",
+                    url="https://github.com/huangruiteng/loopx/blob/main/README.zh-CN.md",
+                    heat=92,
+                    interaction=88,
+                    hook=84,
+                    pain=80,
+                    reuse=92,
+                    material=96,
+                    summary="LoopX 给现有 Agent 补上一层长期工作控制系统，让 Codex、Claude Code 这类 Agent 更接近真正的数字员工。",
+                )
+            ],
+        )
+        llm = FakeLLMProvider()
+
+        generate_llm_drafts(result, llm)
+
+        self.assertIn("GitHub 开源项目分享", llm.prompts[0])
+        self.assertIn("项目一句话定位", llm.prompts[0])
+        self.assertIn("适合谁用", llm.prompts[0])
+        self.assertIn("项目地址", llm.prompts[0])
+        self.assertIn("链接只在文末作为项目地址出现", llm.prompts[0])
+        self.assertIn("不要把链接写进标题", llm.prompts[0])
+        self.assertIn("用户意图：分享 GitHub 开源项目", llm.prompts[0])
+        self.assertNotIn("创作主题：分享 https", llm.prompts[0])
+        self.assertNotIn("副业/AI学习方法拆解", llm.prompts[0])
+
     def test_wechat_article_title_is_forced_to_selected_topic(self):
         result = run_keyword_workflow(
             "minimax h3介绍",

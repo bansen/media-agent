@@ -176,6 +176,35 @@ class TitleOptimizerTests(unittest.TestCase):
         self.assertNotIn("如视频相关等", optimized_title)
         self.assertLessEqual(len(optimized_title), 28)
 
+    def test_github_project_prompt_uses_hook_title_without_exposing_url(self):
+        candidates = [
+            CandidateContent(
+                title="GitHub 开源项目：huangruiteng/loopx - 项目资料",
+                source="websearch_mcp",
+                url="https://github.com/huangruiteng/loopx/blob/main/README.zh-CN.md",
+                heat=92,
+                interaction=88,
+                hook=84,
+                pain=80,
+                reuse=92,
+                material=96,
+                summary="LoopX 给现有 Agent 补上一层长期工作控制系统，让 Codex、Claude Code 这类 Agent 更接近真正的数字员工。",
+            )
+        ]
+
+        result = run_keyword_workflow(
+            "写一篇分享 https://github.com/huangruiteng/loopx/blob/main/README.zh-CN.md 的文章",
+            candidates=candidates,
+            primary_channel="wechat",
+        )
+        optimized_title = result.topics[0].optimized_title
+
+        self.assertIn("Agent", optimized_title)
+        self.assertTrue(any(term in optimized_title for term in ["开源项目", "连续工作", "数字员工", "工作系统"]))
+        self.assertNotIn("http", optimized_title)
+        self.assertNotIn("github.com", optimized_title)
+        self.assertNotIn("huangruiteng/loopx", optimized_title)
+
 
 if __name__ == "__main__":
     unittest.main()

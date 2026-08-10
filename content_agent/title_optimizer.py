@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 
+from .content_planner import strip_urls
 from .creative_brief import CreativeBrief, build_creative_brief, is_creative_prompt
 from .keyword_intent import extract_keyword_entity, extract_keyword_modifiers, parse_keyword_intent
 from .models import ContentChannel
@@ -66,6 +67,8 @@ def _legacy_optimize_title(title: str, channel: ContentChannel, keyword: str = "
 
 def _candidate_titles(title: str, channel: ContentChannel, keyword: str, brief: CreativeBrief) -> list[str]:
     legacy = _legacy_optimize_title(title, channel, keyword=keyword)
+    if _looks_like_github_project(title, keyword):
+        return _dedupe(_github_project_title_candidates(title))
     if channel == "xiaohongshu" or _looks_like_health(f"{title} {brief.topic}"):
         return _health_title_candidates(title, brief, legacy)
     intent = parse_keyword_intent(keyword)
@@ -148,7 +151,7 @@ def _health_title_candidates(title: str, brief: CreativeBrief, legacy: str) -> l
 
 
 def _general_title_candidates(title: str, brief: CreativeBrief) -> list[str]:
-    topic = _compact_topic(brief.topic or title, "这个主题")
+    topic = _compact_topic(strip_urls(brief.topic) or title, "这个主题")
     return [
         f"{topic}，先看懂这 3 个关键问题",
         f"别急着开始，{topic}先想清楚这件事",
@@ -169,8 +172,12 @@ def _score_title(title: str, source_title: str, brief: CreativeBrief, channel: C
     score += 4 if channel == "xiaohongshu" and any(term in title for term in ["收藏", "习惯", "清单"]) else 0
     if len(title) < 12 or len(title) > 34:
         score -= 8
-    if any(term in title for term in ["我想写", "目标读者", "内容要", "要求", "风格"]):
+    if any(term in title for term in ["我想写", "目标读者", "内容要", "要求", "风格", "http", "github.com"]):
         score -= 30
+    if _looks_like_github_project(source_title, brief.raw_prompt) and any(
+        term in title for term in ["开源项目", "Agent", "数字员工", "工作系统", "连续工作"]
+    ):
+        score += 24
     if _contains_any(source_title, ["坑", "骗局", "卖课", "割韭菜"]) and "坑" in title:
         score += 10
     if _contains_any(source_title, ["交易", "服务", "需求", "增长"]) and "第一单" in title:
@@ -190,6 +197,7 @@ def _title_reason(title: str, brief: CreativeBrief) -> str:
 
 def clean_source_title(title: str) -> str:
     clean = re.sub(r"\s+", " ", title).strip()
+    clean = strip_urls(clean)
     clean = re.split(r"\s+[—-]\s+|[丨｜]", clean, maxsplit=1)[0].strip()
     clean = re.sub(r"\s+", " ", clean)
     return clean.strip(" -_｜丨")
@@ -214,6 +222,7 @@ def _optimize_ai_side_hustle_title(title: str) -> str:
 
 
 def _optimize_keyword_title(title: str, keyword: str) -> str:
+    keyword = strip_urls(keyword)
     clean_keyword = extract_keyword_entity(keyword) or keyword.strip()
     keyword_modifiers = extract_keyword_modifiers(keyword)
     model_entity = _model_entity_from_source_title(title)
@@ -230,6 +239,17 @@ def _optimize_keyword_title(title: str, keyword: str) -> str:
     if _contains_any(title, ["发布", "更新", "趋势", "报告", "方案"]):
         return f"{clean_keyword}有新变化，普通人先看懂这 3 点"
     return f"{clean_keyword}怎么入门？先从这 3 个真实场景开始"
+
+
+def _github_project_title_candidates(title: str) -> list[str]:
+    focus = "Agent" if _contains_any(title, ["Agent", "智能体", "Codex", "Claude", "loopx", "LoopX"]) else "这个工具"
+    return [
+        f"{focus} 总是跑偏？这个开源项目给了一套工作系统",
+        f"别只会写 Prompt，{focus} 真正缺的是这套工作流",
+        f"让 {focus} 连续工作，这个开源项目的思路值得看",
+        f"做 {focus} 的人，应该看看这个开源项目",
+        f"{focus} 走向数字员工，差的可能不是模型",
+    ]
 
 
 def _optimize_tool_integration_title(title: str, entities: list[str], modifiers: list[str]) -> str:
@@ -336,6 +356,11 @@ def _looks_like_ai_focus(text: str) -> bool:
             "接单",
         ],
     )
+
+
+def _looks_like_github_project(title: str, keyword: str) -> bool:
+    text = f"{title} {keyword}"
+    return "github.com" in text.lower() or _contains_any(text, ["GitHub 开源项目", "开源项目"])
 
 
 def _contains_any(text: str, terms: list[str]) -> bool:

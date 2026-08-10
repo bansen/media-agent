@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .content_planner import build_content_plan, strip_urls
 from .creative_brief import CreativeBrief, build_creative_brief
 from .keyword_intent import parse_keyword_intent
 from .models import TopicBrief
@@ -16,10 +17,19 @@ COVER_STYLE_GUIDANCE = {
 def build_wechat_outline(topic: TopicBrief, keyword: str = "") -> str:
     intent = parse_keyword_intent(keyword)
     brief = build_creative_brief(keyword)
+    plan = build_content_plan(topic, keyword)
     keyword_line = f"用户关键词：{keyword.strip()}" if keyword.strip() else "用户关键词：未提供"
     brief_lines = _creative_brief_lines(brief)
     source_line = f"选中素材：{topic.title}"
-    if intent.task_kind == "tool_integration":
+    if plan.content_type == "github_project_share":
+        keyword_line = "用户意图：分享 GitHub 开源项目"
+        brief_lines = []
+        if topic.url:
+            brief_lines.append(f"项目地址：{topic.url}")
+        positioning = "定位：GitHub 开源项目分享，写给关注 AI Agent、自动化工作流和开发效率的读者。"
+        topic_lock = "主题锁定：全文必须围绕项目解决的问题、项目思路和适用人群展开，链接只在文末作为项目地址出现，不要把链接写进标题。"
+        structure = plan.structure
+    elif intent.task_kind == "tool_integration":
         positioning = "定位：工具接入教程，写给正在尝试把 AI 模型接入实际工作流的人。"
         topic_lock = "主题锁定：全文必须围绕工具接入、配置步骤和结果验证展开，不要改写成泛泛的 AI 学习、副业赚钱或人生建议。"
         structure = "结构：使用场景 -> 准备条件 -> 接入步骤 -> 识图验证 -> 常见问题 -> 行动清单。"
@@ -69,10 +79,13 @@ def build_cover_prompt(topic: TopicBrief, channel: str = "wechat") -> str:
 
 
 def build_cover_strategy(topic: TopicBrief, brief: CreativeBrief, channel: str = "wechat") -> dict[str, str]:
-    core_message = brief.topic or topic.optimized_title
+    plan = build_content_plan(topic, brief.raw_prompt)
+    core_message = strip_urls(brief.topic)
+    if not core_message or len(core_message) < 4:
+        core_message = topic.optimized_title
     audience = brief.audience or ("20-45 岁职场女性或宝妈" if channel == "xiaohongshu" else "普通内容创作者")
     emotion = _cover_emotion_for(topic, brief, channel)
-    scene = _cover_scene_for(topic, brief, channel)
+    scene = plan.cover_scene if plan.cover_scene else _cover_scene_for(topic, brief, channel)
     return {
         "core_message": core_message,
         "audience": audience,
@@ -108,6 +121,11 @@ def _cover_style_for(topic: TopicBrief, channel: str) -> str:
     title = f"{topic.title} {topic.optimized_title} {topic.angle}"
     ratio = "4:5 vertical social cover" if channel == "xiaohongshu" else "16:9 wide cover"
 
+    if _contains_any(title, ["GitHub 开源项目", "开源项目", "Agent", "智能体", "数字员工", "工作系统"]):
+        return (
+            f"open-source agent system, abstract workflow nodes, automation timeline, "
+            f"connected task graph, clean technical interface, high-resolution editorial cover, {ratio}"
+        )
     if _contains_any(title, ["久坐", "办公室", "肩颈", "腰背"]):
         return (
             f"office wellness break, bright lifestyle photo, calm workplace corner, "
@@ -184,6 +202,8 @@ def _cover_scene_for(topic: TopicBrief, brief: CreativeBrief, channel: str) -> s
     text = f"{topic.optimized_title} {topic.title} {brief.topic}"
     if channel == "xiaohongshu":
         return "bright lived-in lifestyle scene matching the daily habit topic"
+    if _contains_any(text, ["GitHub 开源项目", "开源项目", "Agent", "智能体", "数字员工", "工作系统"]):
+        return "open-source agent system with workflow nodes, automation timeline, connected task graph, clean technical interface"
     if _contains_any(text, ["视频", "创作者"]):
         return "creator desk with laptop timeline interface glow, camera or phone nearby, active planning moment"
     if _contains_any(text, ["接单", "副业", "第一单"]):
