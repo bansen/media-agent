@@ -53,7 +53,7 @@ from .workflow import run_keyword_workflow
 
 CollectorName = Literal["baidu_search"]
 ChannelName = Literal["wechat", "xiaohongshu"]
-JobStatus = Literal["queued", "running", "completed", "preview_ready", "publishing", "published_draft", "failed", "archived"]
+JobStatus = Literal["queued", "running", "completed", "preview_ready", "publishing", "published_draft", "published", "failed", "archived"]
 StepName = Literal["materials", "content", "format", "cover", "submit", "all"]
 
 
@@ -659,6 +659,28 @@ def submit_stored_previewed_wechat_draft(
         raise
 
 
+def mark_xiaohongshu_published(store: JobStore, job_id: str) -> WebJob:
+    job = store.get(job_id)
+    if job is None:
+        raise KeyError(job_id)
+    if job.options.channel != "xiaohongshu":
+        raise ValueError("当前记录不是小红书渠道")
+    if not ((job.result or {}).get("llm_drafts") or {}).get("xhs_note"):
+        raise ValueError("请先生成小红书内容，再标记已发布")
+    store.record_publish_attempt(
+        job_id,
+        platform="xiaohongshu",
+        status="published",
+        response={"mode": "manual", "message": "用户已确认在小红书完成发布"},
+    )
+    latest = store.get(job_id)
+    if latest is None:
+        raise KeyError(job_id)
+    latest.events.append("小红书已标记为人工发布")
+    store._persist_job(latest, event="小红书已标记为人工发布")
+    return latest
+
+
 def render_index_html() -> str:
     return INDEX_HTML
 
@@ -785,6 +807,17 @@ class ContentAgentHandler(BaseHTTPRequestHandler):
                         config=self._wechat_publish_config_for_user(user["id"]),
                     )
                     self._send_json(submitted.to_dict())
+                except Exception as exc:
+                    latest = self.store.get(job_id)
+                    self._send_json(
+                        {"error": str(exc), "job": latest.to_dict() if latest else None},
+                        status=HTTPStatus.BAD_REQUEST,
+                    )
+                return
+            if step == "xhs-published":
+                try:
+                    marked = mark_xiaohongshu_published(self.store, job_id)
+                    self._send_json(marked.to_dict())
                 except Exception as exc:
                     latest = self.store.get(job_id)
                     self._send_json(
@@ -1901,6 +1934,24 @@ INDEX_HTML = r"""<!doctype html>
     .empty { color: var(--muted); font-size: 13px; line-height: 1.6; }
     .error { color: var(--red); font-weight: 700; }
     .path { word-break: break-all; color: var(--blue); font-size: 12px; margin-top: 8px; }
+    .xhs-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 12px; }
+    .xhs-actions button,
+    .xhs-actions a {
+      width: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 9px 12px;
+      color: var(--ink);
+      background: #fff;
+      text-decoration: none;
+      font-weight: 800;
+      font-size: 13px;
+    }
+    .xhs-actions .primary-action {
+      border-color: var(--green);
+      color: #fff;
+      background: var(--green);
+    }
     .history-head {
       display: flex;
       align-items: center;
@@ -2019,6 +2070,7 @@ INDEX_HTML = r"""<!doctype html>
           <h2>封面与提交</h2>
           <div id="assets"><p class="empty">生成封面或提交草稿后展示结果。</p></div>
           <button id="submitDraftButton" type="button" disabled>提交公众号草稿箱</button>
+          <button id="xhsPublishedButton" type="button" disabled style="margin-top:8px;">标记小红书已发布</button>
           <p id="submitHint" class="empty" style="margin-top:10px;">生成公众号预览和封面后可提交。</p>
         </section>
       </div>
@@ -2033,6 +2085,7 @@ INDEX_HTML = r"""<!doctype html>
     const previewEl = document.getElementById("preview");
     const assetsEl = document.getElementById("assets");
     const submitDraftButton = document.getElementById("submitDraftButton");
+    const xhsPublishedButton = document.getElementById("xhsPublishedButton");
     const submitHint = document.getElementById("submitHint");
     const historyList = document.getElementById("historyList");
     const refreshHistoryButton = document.getElementById("refreshHistoryButton");
@@ -2044,6 +2097,7 @@ INDEX_HTML = r"""<!doctype html>
       preview_ready: "预览完成",
       publishing: "发布中",
       published_draft: "已发布",
+      published: "已发布",
       failed: "失败",
       archived: "已归档"
     };
@@ -2096,6 +2150,7 @@ INDEX_HTML = r"""<!doctype html>
     async function startNewJob(payload, copy) {
       setBusy(true);
       submitDraftButton.disabled = true;
+      xhsPublishedButton.disabled = true;
       submitHint.textContent = copy.submitText;
       currentJobId = "";
       statusEl.textContent = copy.statusText;
@@ -2158,6 +2213,22 @@ INDEX_HTML = r"""<!doctype html>
         renderJob(job);
         loadHistory();
         if (!response.ok) throw new Error(payload.error || "提交失败");
+      } catch (error) {
+        submitHint.textContent = error.message;
+      }
+    });
+
+    xhsPublishedButton.addEventListener("click", async () => {
+      if (!currentJobId) return;
+      xhsPublishedButton.disabled = true;
+      submitHint.textContent = "正在记录小红书发布状态。";
+      try {
+        const response = await fetch(`/api/jobs/${currentJobId}/steps/xhs-published`, {method: "POST"});
+        const payload = await response.json();
+        const job = payload.job || payload;
+        renderJob(job);
+        loadHistory();
+        if (!response.ok) throw new Error(payload.error || "标记失败");
       } catch (error) {
         submitHint.textContent = error.message;
       }
@@ -2286,17 +2357,52 @@ INDEX_HTML = r"""<!doctype html>
       previewEl.innerHTML = previewPath
         ? `<iframe src="/file?path=${encodeURIComponent(previewPath)}"></iframe><p class="path">${escapeHtml(previewPath)}</p>`
         : xhsNote
-          ? `<pre>${escapeHtml(xhsNote)}</pre>`
+          ? renderXhsPreview(xhsNote)
           : '<p class="empty">没有生成预览内容。</p>';
 
       const coverPath = result.cover_image && result.cover_image.path;
       const draft = result.wechat_draft ? JSON.stringify(result.wechat_draft.response, null, 2) : "";
       assetsEl.innerHTML = [
-        coverPath ? `<img class="cover" src="/file?path=${encodeURIComponent(coverPath)}"><p class="path">${escapeHtml(coverPath)}</p>` : "",
+        coverPath ? `<img class="cover" src="/file?path=${encodeURIComponent(coverPath)}"><p class="path">${escapeHtml(coverPath)}</p><a class="login" href="/file?path=${encodeURIComponent(coverPath)}" target="_blank" rel="noopener">打开/保存封面图</a>` : "",
         draft ? `<pre>${escapeHtml(draft)}</pre>` : "",
         result.wechat_draft_error ? `<p class="error">${escapeHtml(result.wechat_draft_error)}</p>` : ""
       ].filter(Boolean).join("") || '<p class="empty">没有封面或草稿结果。</p>';
       renderSubmitGate(result);
+    }
+
+    function renderXhsPreview(note) {
+      return `
+        <div class="xhs-actions">
+          <button class="primary-action" type="button" onclick="copyXhsPackage()">复制发布包</button>
+          <button type="button" onclick="copyXhsTags()">复制标签</button>
+          <a href="https://creator.xiaohongshu.com/publish/publish?source=official" target="_blank" rel="noopener">打开小红书创作平台</a>
+        </div>
+        <pre id="xhsNotePreview">${escapeHtml(note)}</pre>
+      `;
+    }
+
+    function extractTags(note) {
+      const matches = String(note || "").match(/#[^#\\s]+/g);
+      return matches ? matches.join(" ") : "";
+    }
+
+    function copyXhsPackage() {
+      const text = document.getElementById("xhsNotePreview")?.textContent || "";
+      copyText(text);
+    }
+
+    function copyXhsTags() {
+      const text = document.getElementById("xhsNotePreview")?.textContent || "";
+      copyText(extractTags(text));
+    }
+
+    async function copyText(text) {
+      try {
+        await navigator.clipboard.writeText(text || "");
+        submitHint.textContent = "已复制到剪贴板。";
+      } catch (error) {
+        submitHint.textContent = "复制失败，请手动选中文本复制。";
+      }
     }
 
     function renderTitleLab(candidates) {
@@ -2310,6 +2416,7 @@ INDEX_HTML = r"""<!doctype html>
       stepButtons.forEach(button => button.disabled = isBusy);
       if (isBusy) {
         submitDraftButton.disabled = true;
+        xhsPublishedButton.disabled = true;
       }
     }
 
@@ -2318,16 +2425,32 @@ INDEX_HTML = r"""<!doctype html>
     }
 
     function publishLabel(job) {
-      if (job.status === "published_draft" || job.result?.wechat_draft) return "已发布";
+      if (job.status === "published" || job.status === "published_draft" || job.result?.wechat_draft) return "已发布";
       const attempts = job.publish_attempts || [];
+      if (attempts.some(attempt => attempt.platform === "xiaohongshu" && attempt.status === "published")) return "已发布";
       if (attempts.some(attempt => attempt.status === "failed")) return "发布失败";
       return "未发布";
     }
 
     function renderSubmitGate(result) {
+      const channel = document.getElementById("channel").value;
+      const xhsNote = Boolean(result.llm_drafts && result.llm_drafts.xhs_note);
       const hasPreview = Boolean(result.gzh_formatting && result.gzh_formatting.clean_html);
       const hasCover = Boolean(result.cover_image && result.cover_image.path);
       const submitted = Boolean(result.wechat_draft);
+      if (channel === "xiaohongshu") {
+        submitDraftButton.disabled = true;
+        xhsPublishedButton.disabled = !xhsNote || !currentJobId;
+        if (!xhsNote) {
+          submitHint.textContent = "请先生成小红书发布包。";
+        } else {
+          submitHint.textContent = hasCover
+            ? "复制发布包并保存封面，发布完成后可标记已发布。"
+            : "复制发布包后手动配图，或先生成封面。";
+        }
+        return;
+      }
+      xhsPublishedButton.disabled = true;
       submitDraftButton.disabled = submitted || !hasPreview || !hasCover || !currentJobId;
       if (submitted) {
         submitHint.textContent = "已提交到公众号草稿箱。";

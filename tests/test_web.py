@@ -15,6 +15,7 @@ from content_agent.web import (
     render_index_html,
     render_landing_html,
     render_trial_html,
+    mark_xiaohongshu_published,
     run_agent_workflow,
     submit_stored_previewed_wechat_draft,
     submit_previewed_wechat_draft,
@@ -58,6 +59,12 @@ class WebTests(unittest.TestCase):
         self.assertNotIn("勾选公众号排版后展示预览", html)
         self.assertNotIn("勾选生成封面", html)
         self.assertIn('id="submitDraftButton"', html)
+        self.assertIn('id="xhsPublishedButton"', html)
+        self.assertIn("复制发布包", html)
+        self.assertIn("复制标签", html)
+        self.assertIn("打开小红书创作平台", html)
+        self.assertIn("steps/xhs-published", html)
+        self.assertIn('published: "已发布"', html)
         self.assertIn('id="historyList"', html)
         self.assertIn("历史记录", html)
         self.assertIn("loadHistory", html)
@@ -497,6 +504,33 @@ class WebTests(unittest.TestCase):
 
         self.assertEqual(payload["cover_image"]["path"], "output/manual-cover.jpg")
         self.assertEqual(payload["cover_image"]["model"], "manual")
+
+    def test_mark_xiaohongshu_published_records_manual_publish_attempt(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = JobStore(database_url=f"sqlite:///{Path(tmpdir) / 'web.db'}", auto_start=False)
+            job = store.create(
+                WebRunOptions(keyword="健康养生", channel="xiaohongshu", collector="baidu_search"),
+                user_id=1,
+            )
+            store._update(
+                job.id,
+                result={
+                    "keyword": "健康养生",
+                    "expanded_keywords": ["健康养生"],
+                    "topics": [],
+                    "wechat_outline": "",
+                    "xhs_package": "",
+                    "cover_prompt": "",
+                    "llm_drafts": {"xhs_note": "标题：久坐人群可收藏的习惯清单\n\n标签：#健康养生"},
+                },
+            )
+
+            marked = mark_xiaohongshu_published(store, job.id)
+
+            self.assertEqual(marked.status, "published")
+            self.assertEqual(marked.publish_attempts[-1]["platform"], "xiaohongshu")
+            self.assertEqual(marked.publish_attempts[-1]["status"], "published")
+            self.assertIn("小红书已标记为人工发布", marked.events)
 
     def test_submit_previewed_wechat_draft_uses_existing_preview_and_cover(self):
         with tempfile.TemporaryDirectory() as tmpdir:
