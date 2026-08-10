@@ -16,11 +16,13 @@ from content_agent.web import (
     render_landing_html,
     render_trial_html,
     mark_xiaohongshu_published,
+    run_agent_step,
     run_agent_workflow,
     submit_stored_previewed_wechat_draft,
     submit_previewed_wechat_draft,
     _options_from_json,
     _options_to_json,
+    _asset_rows_from_result,
 )
 
 
@@ -49,18 +51,24 @@ class WebTests(unittest.TestCase):
         self.assertIn('data-step="all"', html)
         self.assertIn("一键生成全部", html)
         self.assertIn('payload.format_gzh = payload.channel === "wechat"', html)
-        self.assertIn("正在理解创作提示词、收集素材、生成小红书笔记和封面", html)
+        self.assertIn("正在理解创作提示词、收集素材、生成小红书笔记、封面和图文排版", html)
         self.assertIn("result.llm_drafts && result.llm_drafts.xhs_note", html)
         self.assertIn("aspect-ratio: 16 / 9", html)
         self.assertIn('data-step="materials"', html)
         self.assertIn('data-step="content"', html)
         self.assertIn('data-step="format"', html)
         self.assertIn('data-step="cover"', html)
+        self.assertIn('data-step="xhs-layout"', html)
+        self.assertIn("图文排版", html)
+        self.assertIn('id="xhsLayoutTheme"', html)
+        self.assertIn("打包下载全部图片", html)
+        self.assertIn("xhs-card-gallery", html)
+        self.assertIn("layout.publish_text", html)
         self.assertNotIn("勾选公众号排版后展示预览", html)
         self.assertNotIn("勾选生成封面", html)
         self.assertIn('id="submitDraftButton"', html)
         self.assertIn('id="xhsPublishedButton"', html)
-        self.assertIn("复制发布包", html)
+        self.assertIn("复制发布文案", html)
         self.assertIn("复制标签", html)
         self.assertIn("打开小红书创作平台", html)
         self.assertIn("steps/xhs-published", html)
@@ -393,17 +401,79 @@ class WebTests(unittest.TestCase):
         self.assertNotIn("gzh_formatting", payload)
         self.assertNotIn("正在进行公众号排版", events)
 
+    def test_xiaohongshu_all_workflow_generates_three_to_four_cover_and_layout(self):
+        candidate = CandidateContent(
+            title="办公室久坐人群，一天 4 个时间点这样调整",
+            source="baidu_search",
+            url="https://example.com/health",
+            heat=88,
+            interaction=82,
+            hook=80,
+            pain=78,
+            reuse=76,
+            material=75,
+        )
+        config = AgentConfig(
+            llm_provider="deepseek",
+            llm_base_url="https://api.deepseek.com",
+            llm_model="deepseek-chat",
+            llm_api_key="secret",
+            replicate_api_token="replicate-secret",
+            replicate_cover_model_version="",
+            replicate_cover_model="black-forest-labs/flux-1.1-pro",
+            wechat_app_id="",
+            wechat_app_secret="",
+            wechat_access_token="",
+            free_hot_sources=[],
+            database_url="",
+            baidu_search_api_key="baidu-secret",
+        )
+        generated_cover = type(
+            "Cover",
+            (),
+            {"path": Path("output/xhs-cover.jpg"), "url": "", "model": "flux", "prompt": "prompt"},
+        )()
+        package = type(
+            "Package",
+            (),
+            {"to_dict": lambda self: {"theme": "fresh-green", "cards": [{"path": "output/01-cover.jpg"}], "zip_path": "output/package.zip"}},
+        )()
+
+        with patch("content_agent.web.AgentConfig.from_env_file", return_value=config), patch(
+            "content_agent.web.collect_baidu_search_candidates", return_value=[candidate]
+        ), patch(
+            "content_agent.web.generate_llm_drafts",
+            return_value={"xhs_note": "标题：久坐女性的4个习惯\n\n正文：\n\n1. 喝水\n慢慢喝。\n\n标签：#健康养生"},
+        ), patch("content_agent.web.generate_cover_image", return_value=generated_cover) as cover, patch(
+            "content_agent.web.render_xhs_package", return_value=package
+        ) as layout:
+            payload = run_agent_workflow(
+                WebRunOptions(
+                    keyword="健康养生",
+                    channel="xiaohongshu",
+                    use_llm=True,
+                    generate_cover=True,
+                    xhs_layout_theme="auto",
+                )
+            )
+
+        self.assertEqual(cover.call_args.kwargs["aspect_ratio"], "3:4")
+        self.assertEqual(layout.call_args.kwargs["background_path"], "output/xhs-cover.jpg")
+        self.assertIn("xhs_layout", payload)
+
     def test_web_run_options_persist_format_and_cover_styles(self):
         options = WebRunOptions(
             keyword="AI副业",
             format_theme="tech-blue",
             cover_style="real-photo",
+            xhs_layout_theme="warm-coral",
         )
 
         stored = _options_from_json(_options_to_json(options))
 
         self.assertEqual(stored.format_theme, "tech-blue")
         self.assertEqual(stored.cover_style, "real-photo")
+        self.assertEqual(stored.xhs_layout_theme, "warm-coral")
 
     def test_run_agent_workflow_applies_selected_cover_style_once(self):
         candidate = CandidateContent(
@@ -473,6 +543,140 @@ class WebTests(unittest.TestCase):
                 "submit",
                 {"topics": [{}], "gzh_formatting": {"clean_html": "output/a.html"}},
             )
+        with self.assertRaisesRegex(ValueError, "请先生成小红书内容"):
+            validate_step_prerequisites("xhs-layout", {"topics": [{}]})
+
+    def test_xiaohongshu_layout_step_uses_note_and_cover_background(self):
+        current = {
+            "topics": [{"title": "秋季养生"}],
+            "llm_drafts": {"xhs_note": "标题：秋天养元气\n\n正文：\n\n1. 早起喝水\n慢慢喝。\n\n标签：#健康养生"},
+            "cover_image": {"path": "output/background.jpg"},
+        }
+        package = type("Package", (), {"to_dict": lambda self: {"theme": "fresh-green", "cards": [], "zip_path": "output/package.zip"}})()
+
+        with patch("content_agent.web.render_xhs_package", return_value=package) as render:
+            payload = run_agent_step(
+                WebRunOptions(keyword="秋季养生", channel="xiaohongshu", xhs_layout_theme="fresh-green"),
+                step="xhs-layout",
+                current_result=current,
+                package_id="job-layout",
+            )
+
+        self.assertEqual(payload["xhs_layout"]["theme"], "fresh-green")
+        self.assertEqual(render.call_args.kwargs["background_path"], "output/background.jpg")
+        self.assertEqual(render.call_args.kwargs["package_id"], "job-layout")
+
+    def test_regenerating_xiaohongshu_content_discards_old_layout(self):
+        current = {
+            "keyword": "秋季养生",
+            "expanded_keywords": ["秋季养生"],
+            "topics": [{"title": "秋季养生"}],
+            "wechat_outline": "",
+            "xhs_package": "",
+            "cover_prompt": "cover prompt",
+            "xhs_layout": {"cards": [{"path": "output/old.jpg"}], "zip_path": "output/old.zip"},
+        }
+
+        with patch("content_agent.web.AgentConfig.from_env_file") as config:
+            config.return_value.build_llm_provider.return_value = object()
+            with patch("content_agent.web.generate_llm_drafts", return_value={"xhs_note": "标题：新内容"}):
+                payload = run_agent_step(
+                    WebRunOptions(keyword="秋季养生", channel="xiaohongshu"),
+                    step="content",
+                    current_result=current,
+                )
+
+        self.assertNotIn("xhs_layout", payload)
+
+    def test_regenerating_xiaohongshu_cover_discards_old_layout(self):
+        current = {
+            "topics": [{"title": "秋季养生"}],
+            "cover_prompt": "cover prompt",
+            "llm_drafts": {"xhs_note": "标题：秋季养生"},
+            "xhs_layout": {"cards": [{"path": "output/old.jpg"}], "zip_path": "output/old.zip"},
+        }
+        generated = type("Cover", (), {"path": Path("output/new.jpg"), "url": "", "model": "mock", "prompt": "cover prompt"})()
+
+        with patch("content_agent.web.AgentConfig.from_env_file") as config:
+            config.return_value.replicate_cover_model = "mock"
+            config.return_value.replicate_api_token = "token"
+            with patch("content_agent.web.generate_cover_image", return_value=generated):
+                payload = run_agent_step(
+                    WebRunOptions(keyword="秋季养生", channel="xiaohongshu"),
+                    step="cover",
+                    current_result=current,
+                )
+
+        self.assertNotIn("xhs_layout", payload)
+
+    def test_switching_channel_then_regenerating_content_discards_old_xhs_layout(self):
+        current = {
+            "keyword": "秋季养生",
+            "expanded_keywords": ["秋季养生"],
+            "topics": [{"title": "秋季养生"}],
+            "wechat_outline": "",
+            "xhs_package": "",
+            "cover_prompt": "cover prompt",
+            "xhs_layout": {"cards": [{"path": "output/old.jpg"}], "zip_path": "output/old.zip"},
+        }
+
+        with patch("content_agent.web.AgentConfig.from_env_file") as config:
+            config.return_value.build_llm_provider.return_value = object()
+            with patch("content_agent.web.generate_llm_drafts", return_value={"wechat_article": "# 新内容"}):
+                payload = run_agent_step(
+                    WebRunOptions(keyword="秋季养生", channel="wechat"),
+                    step="content",
+                    current_result=current,
+                )
+
+        self.assertNotIn("xhs_layout", payload)
+
+    def test_switching_channel_then_regenerating_cover_discards_old_xhs_layout(self):
+        current = {
+            "topics": [{"title": "秋季养生"}],
+            "cover_prompt": "cover prompt",
+            "xhs_layout": {"cards": [{"path": "output/old.jpg"}], "zip_path": "output/old.zip"},
+        }
+        generated = type("Cover", (), {"path": Path("output/new.jpg"), "url": "", "model": "mock", "prompt": "cover prompt"})()
+
+        with patch("content_agent.web.AgentConfig.from_env_file") as config:
+            config.return_value.replicate_cover_model = "mock"
+            config.return_value.replicate_api_token = "token"
+            with patch("content_agent.web.generate_cover_image", return_value=generated):
+                payload = run_agent_step(
+                    WebRunOptions(keyword="秋季养生", channel="wechat"),
+                    step="cover",
+                    current_result=current,
+                )
+
+        self.assertNotIn("xhs_layout", payload)
+
+    def test_job_store_passes_job_id_to_asset_generation(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = JobStore(database_url=f"sqlite:///{Path(tmpdir) / 'web.db'}", auto_start=False)
+            job = store.create(WebRunOptions(keyword="秋季养生", channel="xiaohongshu"), user_id=1)
+
+            with patch("content_agent.web.run_agent_workflow", return_value={"topics": []}) as workflow:
+                store._run_job(job.id)
+
+            self.assertEqual(workflow.call_args.kwargs["package_id"], job.id)
+
+    def test_xiaohongshu_assets_are_persisted_for_authenticated_downloads(self):
+        result = {
+            "xhs_layout": {
+                "theme": "fresh-green",
+                "cards": [
+                    {"index": 1, "kind": "cover", "path": "output/xhs/01-cover.jpg", "title": "标题"},
+                    {"index": 2, "kind": "tail", "path": "output/xhs/02-tail.jpg", "title": "结尾"},
+                ],
+                "zip_path": "output/xhs/xiaohongshu-package.zip",
+            }
+        }
+
+        rows = _asset_rows_from_result("job1", result, created_at=1.0)
+
+        self.assertEqual([row.kind for row in rows], ["xiaohongshu_card", "xiaohongshu_card", "xiaohongshu_package"])
+        self.assertEqual(rows[-1].mime_type, "application/zip")
 
     def test_run_agent_workflow_exposes_existing_cover_for_preview_submit(self):
         candidate = CandidateContent(
@@ -512,6 +716,8 @@ class WebTests(unittest.TestCase):
                 WebRunOptions(keyword="健康养生", channel="xiaohongshu", collector="baidu_search"),
                 user_id=1,
             )
+            package_path = Path(tmpdir) / "xiaohongshu-package.zip"
+            package_path.write_bytes(b"zip")
             store._update(
                 job.id,
                 result={
@@ -522,6 +728,10 @@ class WebTests(unittest.TestCase):
                     "xhs_package": "",
                     "cover_prompt": "",
                     "llm_drafts": {"xhs_note": "标题：久坐人群可收藏的习惯清单\n\n标签：#健康养生"},
+                    "xhs_layout": {
+                        "cards": [{"path": str(Path(tmpdir) / "01-cover.jpg")}],
+                        "zip_path": str(package_path),
+                    },
                 },
             )
 
@@ -531,6 +741,15 @@ class WebTests(unittest.TestCase):
             self.assertEqual(marked.publish_attempts[-1]["platform"], "xiaohongshu")
             self.assertEqual(marked.publish_attempts[-1]["status"], "published")
             self.assertIn("小红书已标记为人工发布", marked.events)
+
+    def test_mark_xiaohongshu_published_requires_complete_layout_package(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = JobStore(database_url=f"sqlite:///{Path(tmpdir) / 'web.db'}", auto_start=False)
+            job = store.create(WebRunOptions(keyword="健康养生", channel="xiaohongshu"), user_id=1)
+            store._update(job.id, result={"llm_drafts": {"xhs_note": "标题：健康养生"}})
+
+            with self.assertRaisesRegex(ValueError, "请先生成小红书图文排版"):
+                mark_xiaohongshu_published(store, job.id)
 
     def test_submit_previewed_wechat_draft_uses_existing_preview_and_cover(self):
         with tempfile.TemporaryDirectory() as tmpdir:

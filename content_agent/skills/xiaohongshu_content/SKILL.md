@@ -76,36 +76,15 @@ For tool/project sharing notes:
 - Make the note feel handwritten but not messy.
 - Use light emotional resonance, not anxiety.
 
-## Cover Card Plan
-
-Always produce a cover plan for manual design or image generation:
-
-- First image: title hook, visual subject, style direction.
-- Card 2-5: match the number of body points. If there are 4 methods, plan 4 method cards.
-- Final card: summary, save reminder, or gentle comment prompt.
-
-Cover style should match the topic:
-
-- Health/lifestyle: bright real-life scene, warm daylight, clean home or workplace corner.
-- Workplace women: tidy desk, water bottle, stretching break, soft color contrast.
-- Moms: lived-in home corner, calm bedtime or morning routine, no staged perfection.
-- Tool/project: product workflow, task board, app interface abstraction, no raw URL.
-
-Avoid blank white rectangles, poster boards, tiny unreadable text, medical icons, exaggerated before-after effects, and generic office photos when the topic has a more specific scene.
-
 ## Output Format
 
-Return only the Xiaohongshu package in Markdown:
+Return only publishable Xiaohongshu copy in Markdown. Do not include a cover-card plan, layout instructions, or a `封面图组` section; the layout skill handles those separately.
 
 ```markdown
 标题：...
 
 正文：
 ...
-
-封面图组：
-1. 首图：...
-2. ...
 
 标签：
 #标签1 #标签2 #标签3

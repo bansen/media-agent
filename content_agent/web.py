@@ -49,12 +49,13 @@ from .models import TopicBrief, TopicScore, WorkflowResult
 from .prompts import COVER_STYLE_GUIDANCE, apply_cover_style
 from .wechat_publish import publish_wechat_draft
 from .workflow import run_keyword_workflow
+from .xhs_layout import THEMES as XHS_LAYOUT_THEMES, render_xhs_package
 
 
 CollectorName = Literal["baidu_search"]
 ChannelName = Literal["wechat", "xiaohongshu"]
 JobStatus = Literal["queued", "running", "completed", "preview_ready", "publishing", "published_draft", "published", "failed", "archived"]
-StepName = Literal["materials", "content", "format", "cover", "submit", "all"]
+StepName = Literal["materials", "content", "format", "cover", "xhs-layout", "submit", "all"]
 
 
 @dataclass(frozen=True)
@@ -70,6 +71,7 @@ class WebRunOptions:
     wechat_cover_image: str = ""
     format_theme: str = "moyu-green"
     cover_style: str = "business-tech"
+    xhs_layout_theme: str = "auto"
     output_dir: Path = Path("output")
 
 
@@ -174,13 +176,18 @@ class JobStore:
         self._update(job_id, status="running", event=_step_started_message(step))
         try:
             if step == "all":
-                result = run_agent_workflow(job.options, progress=lambda message: self._update(job_id, event=message))
+                result = run_agent_workflow(
+                    job.options,
+                    progress=lambda message: self._update(job_id, event=message),
+                    package_id=job_id,
+                )
             else:
                 result = run_agent_step(
                     job.options,
                     step=step,
                     current_result=job.result,
                     progress=lambda message: self._update(job_id, event=message),
+                    package_id=job_id,
                 )
             self._update(job_id, status=_status_for_result(result), result=result, event=_step_finished_message(step))
         except Exception as exc:
@@ -310,6 +317,7 @@ def _options_to_json(options: WebRunOptions) -> dict:
         "wechat_cover_image": options.wechat_cover_image,
         "format_theme": options.format_theme,
         "cover_style": options.cover_style,
+        "xhs_layout_theme": options.xhs_layout_theme,
         "output_dir": str(options.output_dir),
     }
 
@@ -328,6 +336,7 @@ def _options_from_json(payload: dict | None) -> WebRunOptions:
         wechat_cover_image=str(payload.get("wechat_cover_image", "")),
         format_theme=str(payload.get("format_theme", "moyu-green")),
         cover_style=str(payload.get("cover_style", "business-tech")),
+        xhs_layout_theme=str(payload.get("xhs_layout_theme", "auto")),
         output_dir=Path(str(payload.get("output_dir", "output"))),
     )
 
@@ -406,20 +415,54 @@ def _asset_rows_from_result(job_id: str, result: dict, created_at: float) -> lis
                 created_at=created_at,
             )
         )
+    xhs_layout = result.get("xhs_layout") or {}
+    for card in xhs_layout.get("cards") or []:
+        if card.get("path"):
+            rows.append(
+                ContentAssetRow(
+                    job_id=job_id,
+                    kind="xiaohongshu_card",
+                    path=str(card["path"]),
+                    mime_type="image/jpeg",
+                    metadata_json={
+                        "index": card.get("index"),
+                        "card_kind": card.get("kind", ""),
+                        "title": card.get("title", ""),
+                        "theme": xhs_layout.get("theme", ""),
+                    },
+                    created_at=created_at,
+                )
+            )
+    if xhs_layout.get("zip_path"):
+        rows.append(
+            ContentAssetRow(
+                job_id=job_id,
+                kind="xiaohongshu_package",
+                path=str(xhs_layout["zip_path"]),
+                mime_type="application/zip",
+                metadata_json={"theme": xhs_layout.get("theme", "")},
+                created_at=created_at,
+            )
+        )
     return rows
 
 
 def _status_for_result(result: dict) -> JobStatus:
     if result.get("wechat_draft"):
         return "published_draft"
-    if result.get("gzh_formatting") or result.get("cover_image"):
+    if result.get("gzh_formatting") or result.get("cover_image") or result.get("xhs_layout"):
         return "preview_ready"
     return "completed"
 
 
-def run_agent_workflow(options: WebRunOptions, progress: Callable[[str], None] | None = None) -> dict:
+def run_agent_workflow(
+    options: WebRunOptions,
+    progress: Callable[[str], None] | None = None,
+    package_id: str | None = None,
+) -> dict:
     _validate_options(options)
     emit = progress or (lambda message: None)
+    artifact_output_dir = options.output_dir / _safe_basename(package_id) if package_id else options.output_dir
 
     candidates = _collect_candidates(options, progress=emit)
     emit(f"已收集 {len(candidates)} 条候选素材")
@@ -448,7 +491,7 @@ def run_agent_workflow(options: WebRunOptions, progress: Callable[[str], None] |
         emit("正在进行公众号排版")
         markdown = payload.get("llm_drafts", {}).get("wechat_article") or _wechat_outline_to_markdown(result.wechat_outline)
         formatted_html = format_wechat_markdown(markdown, theme=options.format_theme)
-        paths = write_gzh_outputs(formatted_html, options.output_dir, _safe_basename(options.keyword), theme=options.format_theme)
+        paths = write_gzh_outputs(formatted_html, artifact_output_dir, _safe_basename(options.keyword), theme=options.format_theme)
         payload["gzh_formatting"] = {
             "theme": theme_label(options.format_theme),
             "clean_html": str(paths.clean_html),
@@ -470,10 +513,11 @@ def run_agent_workflow(options: WebRunOptions, progress: Callable[[str], None] |
         config = AgentConfig.from_env_file()
         generated_cover = generate_cover_image(
             prompt=str(payload["cover_prompt"]),
-            output_dir=options.output_dir,
+            output_dir=artifact_output_dir,
             basename=_safe_basename(options.keyword),
             model=config.replicate_cover_model,
             api_token=config.replicate_api_token,
+            aspect_ratio="3:4" if options.channel == "xiaohongshu" else "16:9",
         )
         cover_image_path = str(generated_cover.path)
         payload["cover_image"] = {
@@ -484,6 +528,19 @@ def run_agent_workflow(options: WebRunOptions, progress: Callable[[str], None] |
             "style": options.cover_style,
         }
         emit("封面生成完成")
+
+    if options.channel == "xiaohongshu" and (payload.get("llm_drafts") or {}).get("xhs_note"):
+        emit("正在生成小红书图文排版")
+        layout = render_xhs_package(
+            str(payload["llm_drafts"]["xhs_note"]),
+            output_dir=options.output_dir,
+            basename=_safe_basename(options.keyword),
+            background_path=cover_image_path or None,
+            theme=options.xhs_layout_theme,
+            package_id=package_id,
+        )
+        payload["xhs_layout"] = layout.to_dict()
+        emit("小红书图文排版完成")
 
     if options.submit_wechat_draft:
         if options.channel != "wechat":
@@ -510,9 +567,11 @@ def run_agent_step(
     step: StepName,
     current_result: dict | None = None,
     progress: Callable[[str], None] | None = None,
+    package_id: str | None = None,
 ) -> dict:
     validate_step_prerequisites(step, current_result)
     emit = progress or (lambda message: None)
+    artifact_output_dir = options.output_dir / _safe_basename(package_id) if package_id else options.output_dir
 
     if step == "materials":
         _validate_options(options)
@@ -539,6 +598,7 @@ def run_agent_step(
             config.build_llm_provider(),
             progress=_localized_generation_progress(emit),
         )
+        payload.pop("xhs_layout", None)
         emit("正文内容生成完成")
         return payload
 
@@ -546,7 +606,7 @@ def run_agent_step(
         emit("正在进行公众号排版")
         markdown = str((payload.get("llm_drafts") or {}).get("wechat_article") or "")
         formatted_html = format_wechat_markdown(markdown, theme=options.format_theme)
-        paths = write_gzh_outputs(formatted_html, options.output_dir, _safe_basename(options.keyword), theme=options.format_theme)
+        paths = write_gzh_outputs(formatted_html, artifact_output_dir, _safe_basename(options.keyword), theme=options.format_theme)
         payload["gzh_formatting"] = {
             "theme": theme_label(options.format_theme),
             "clean_html": str(paths.clean_html),
@@ -561,10 +621,11 @@ def run_agent_step(
         prompt = _cover_prompt_for_style(str(payload.get("cover_prompt", "")), options.cover_style)
         generated_cover = generate_cover_image(
             prompt=prompt,
-            output_dir=options.output_dir,
+            output_dir=artifact_output_dir,
             basename=_safe_basename(options.keyword),
             model=config.replicate_cover_model,
             api_token=config.replicate_api_token,
+            aspect_ratio="3:4" if options.channel == "xiaohongshu" else "16:9",
         )
         payload["cover_prompt"] = prompt
         payload["cover_image"] = {
@@ -574,7 +635,26 @@ def run_agent_step(
             "prompt": generated_cover.prompt,
             "style": options.cover_style,
         }
+        payload.pop("xhs_layout", None)
         emit("封面生成完成")
+        return payload
+
+    if step == "xhs-layout":
+        if options.channel != "xiaohongshu":
+            raise ValueError("公众号渠道无需小红书图文排版")
+        emit("正在生成小红书图文排版")
+        note = str((payload.get("llm_drafts") or {}).get("xhs_note") or "")
+        cover_path = str((payload.get("cover_image") or {}).get("path") or "")
+        layout = render_xhs_package(
+            note,
+            output_dir=options.output_dir,
+            basename=_safe_basename(options.keyword),
+            background_path=cover_path or None,
+            theme=options.xhs_layout_theme,
+            package_id=package_id,
+        )
+        payload["xhs_layout"] = layout.to_dict()
+        emit("小红书图文排版完成")
         return payload
 
     raise ValueError(f"unsupported step: {step}")
@@ -667,6 +747,10 @@ def mark_xiaohongshu_published(store: JobStore, job_id: str) -> WebJob:
         raise ValueError("当前记录不是小红书渠道")
     if not ((job.result or {}).get("llm_drafts") or {}).get("xhs_note"):
         raise ValueError("请先生成小红书内容，再标记已发布")
+    layout = (job.result or {}).get("xhs_layout") or {}
+    package_path = Path(str(layout.get("zip_path") or ""))
+    if not layout.get("cards") or not package_path.is_file():
+        raise ValueError("请先生成小红书图文排版并确认素材包可用，再标记已发布")
     store.record_publish_attempt(
         job_id,
         platform="xiaohongshu",
@@ -1184,6 +1268,7 @@ def _options_from_payload(payload: dict) -> WebRunOptions:
         wechat_cover_image=str(payload.get("wechat_cover_image", "")).strip(),
         format_theme=str(payload.get("format_theme", "moyu-green")).strip() or "moyu-green",
         cover_style=str(payload.get("cover_style", "business-tech")).strip() or "business-tech",
+        xhs_layout_theme=str(payload.get("xhs_layout_theme", "auto")).strip() or "auto",
         output_dir=Path(str(payload.get("output_dir", "output")).strip() or "output"),
     )
 
@@ -1195,7 +1280,7 @@ def _merge_options_payload(options: WebRunOptions, payload: dict | None) -> WebR
 
 
 def _parse_step(step: str) -> StepName:
-    if step in {"materials", "content", "format", "cover", "submit", "all"}:
+    if step in {"materials", "content", "format", "cover", "xhs-layout", "submit", "all"}:
         return step  # type: ignore[return-value]
     raise ValueError("未知步骤")
 
@@ -1211,6 +1296,8 @@ def validate_step_prerequisites(step: StepName, result: dict | None) -> None:
         raise ValueError("请先生成内容，再进行公众号排版")
     if step == "cover" and not result.get("cover_prompt"):
         raise ValueError("请先搜素材，再生成封面")
+    if step == "xhs-layout" and not (result.get("llm_drafts") or {}).get("xhs_note"):
+        raise ValueError("请先生成小红书内容，再进行图文排版")
     if step == "submit":
         if not _preview_clean_html_path(result):
             raise ValueError("请先完成公众号排版预览，再提交草稿箱")
@@ -1229,6 +1316,8 @@ def _validate_options(options: WebRunOptions) -> None:
         raise ValueError("wechat_cover_image is required when submitting without generating a cover")
     theme_label(options.format_theme)
     _cover_prompt_for_style("workspace cover", options.cover_style)
+    if options.xhs_layout_theme != "auto" and options.xhs_layout_theme not in XHS_LAYOUT_THEMES:
+        raise ValueError("不支持的小红书图文主题")
 
 
 def _cover_prompt_for_style(prompt: str, cover_style: str) -> str:
@@ -1263,6 +1352,7 @@ def _step_started_message(step: StepName) -> str:
         "content": "开始生成内容",
         "format": "开始排版预览",
         "cover": "开始生成封面",
+        "xhs-layout": "开始生成小红书图文排版",
         "submit": "开始提交草稿箱",
         "all": "任务开始",
     }.get(step, "任务开始")
@@ -1274,6 +1364,7 @@ def _step_finished_message(step: StepName) -> str:
         "content": "内容步骤完成",
         "format": "排版步骤完成",
         "cover": "封面步骤完成",
+        "xhs-layout": "小红书图文排版完成",
         "submit": "草稿箱提交完成",
         "all": "任务完成",
     }.get(step, "任务完成")
@@ -1817,6 +1908,7 @@ INDEX_HTML = r"""<!doctype html>
     .account-links { display: flex; flex-wrap: wrap; gap: 10px; margin: -12px 0 22px; }
     .account-links a { color: var(--green-dark); font-size: 13px; font-weight: 800; text-decoration: none; }
     label { display: block; color: var(--muted); font-size: 12px; font-weight: 700; margin: 14px 0 6px; }
+    [hidden] { display: none !important; }
     input, textarea, select {
       width: 100%;
       border: 1px solid var(--line);
@@ -1952,6 +2044,56 @@ INDEX_HTML = r"""<!doctype html>
       color: #fff;
       background: var(--green);
     }
+    .xhs-card-gallery {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin: 14px 0;
+    }
+    .xhs-card-item {
+      display: block;
+      min-width: 0;
+      color: var(--ink);
+      text-decoration: none;
+    }
+    .xhs-card-item img {
+      display: block;
+      width: 100%;
+      aspect-ratio: 3 / 4;
+      object-fit: cover;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #eef2ed;
+    }
+    .xhs-card-item span {
+      display: block;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+    .xhs-copy-preview {
+      max-height: 360px;
+      overflow: auto;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fbfcf8;
+      font: inherit;
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    .xhs-package-summary {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f7fbf8;
+    }
+    .xhs-package-summary a { color: var(--green-dark); font-weight: 800; }
     .history-head {
       display: flex;
       align-items: center;
@@ -2019,13 +2161,25 @@ INDEX_HTML = r"""<!doctype html>
           <option value="baidu_search" selected>百度搜索 前10篇非广告</option>
         </select>
 
-        <label for="formatTheme">公众号排版样式</label>
-        <select id="formatTheme" name="format_theme">
-          <option value="moyu-green" selected>摸鱼绿</option>
-          <option value="tech-blue">科技蓝</option>
-          <option value="minimal-mono">极简黑白</option>
-          <option value="warm-card">暖色知识卡</option>
-        </select>
+        <div id="formatThemeField">
+          <label for="formatTheme">公众号排版样式</label>
+          <select id="formatTheme" name="format_theme">
+            <option value="moyu-green" selected>摸鱼绿</option>
+            <option value="tech-blue">科技蓝</option>
+            <option value="minimal-mono">极简黑白</option>
+            <option value="warm-card">暖色知识卡</option>
+          </select>
+        </div>
+
+        <div id="xhsLayoutThemeField" hidden>
+          <label for="xhsLayoutTheme">小红书图文主题</label>
+          <select id="xhsLayoutTheme" name="xhs_layout_theme">
+            <option value="auto" selected>自动匹配主题</option>
+            <option value="fresh-green">清新生活</option>
+            <option value="warm-coral">暖调女性</option>
+            <option value="editorial-blue">知识编辑</option>
+          </select>
+        </div>
 
         <label for="coverStyle">素材图片风格</label>
         <select id="coverStyle" name="cover_style">
@@ -2041,6 +2195,7 @@ INDEX_HTML = r"""<!doctype html>
           <button class="secondary-step" type="button" data-step="content">生成内容</button>
           <button class="secondary-step" type="button" data-step="format">排版预览</button>
           <button class="secondary-step" type="button" data-step="cover">生成封面</button>
+          <button class="secondary-step" type="button" data-step="xhs-layout" hidden>图文排版</button>
         </div>
       </form>
       <div class="history-head">
@@ -2063,11 +2218,11 @@ INDEX_HTML = r"""<!doctype html>
       </div>
       <div class="grid" style="margin-top:18px;">
         <section class="panel">
-          <h2>公众号预览</h2>
+          <h2>内容预览</h2>
           <div id="preview"><p class="empty">排版预览完成后展示。</p></div>
         </section>
         <section class="panel">
-          <h2>封面与提交</h2>
+          <h2>素材与发布</h2>
           <div id="assets"><p class="empty">生成封面或提交草稿后展示结果。</p></div>
           <button id="submitDraftButton" type="button" disabled>提交公众号草稿箱</button>
           <button id="xhsPublishedButton" type="button" disabled style="margin-top:8px;">标记小红书已发布</button>
@@ -2089,6 +2244,9 @@ INDEX_HTML = r"""<!doctype html>
     const submitHint = document.getElementById("submitHint");
     const historyList = document.getElementById("historyList");
     const refreshHistoryButton = document.getElementById("refreshHistoryButton");
+    const channelSelect = document.getElementById("channel");
+    const formatThemeField = document.getElementById("formatThemeField");
+    const xhsLayoutThemeField = document.getElementById("xhsLayoutThemeField");
     const stepButtons = Array.from(document.querySelectorAll("[data-step]"));
     const statusLabels = {
       queued: "排队中",
@@ -2103,8 +2261,10 @@ INDEX_HTML = r"""<!doctype html>
     };
     let currentJobId = "";
 
+    syncChannelControls();
     loadHistory();
     refreshHistoryButton.addEventListener("click", loadHistory);
+    channelSelect.addEventListener("change", syncChannelControls);
     stepButtons.forEach(button => {
       if (button.id === "runAllButton") return;
       if (button.dataset.step === "materials") {
@@ -2129,7 +2289,7 @@ INDEX_HTML = r"""<!doctype html>
         statusText: "启动中",
         topicsText: payload.channel === "wechat"
           ? "正在理解创作提示词、收集素材、生成公众号内容、排版和封面。"
-          : "正在理解创作提示词、收集素材、生成小红书笔记和封面。",
+          : "正在理解创作提示词、收集素材、生成小红书笔记、封面和图文排版。",
         submitText: "正在一键生成全部内容，完成后可预览并提交。"
       });
     }
@@ -2183,7 +2343,7 @@ INDEX_HTML = r"""<!doctype html>
         return;
       }
       setBusy(true);
-      const stepText = {content: "正在生成内容。", format: "正在排版预览。", cover: "正在生成封面。"}[step] || "正在执行。";
+      const stepText = {content: "正在生成内容。", format: "正在排版预览。", cover: "正在生成封面。", "xhs-layout": "正在生成小红书图文排版。"}[step] || "正在执行。";
       submitHint.textContent = stepText;
       try {
         const response = await fetch(`/api/jobs/${currentJobId}/steps/${step}`, {
@@ -2318,6 +2478,7 @@ INDEX_HTML = r"""<!doctype html>
         wechat_cover_image: "",
         format_theme: document.getElementById("formatTheme").value,
         cover_style: document.getElementById("coverStyle").value,
+        xhs_layout_theme: document.getElementById("xhsLayoutTheme").value,
         output_dir: "output"
       };
     }
@@ -2328,6 +2489,8 @@ INDEX_HTML = r"""<!doctype html>
       if (options.collector) document.getElementById("collector").value = options.collector;
       if (options.format_theme) document.getElementById("formatTheme").value = options.format_theme;
       if (options.cover_style) document.getElementById("coverStyle").value = options.cover_style;
+      if (options.xhs_layout_theme) document.getElementById("xhsLayoutTheme").value = options.xhs_layout_theme;
+      syncChannelControls();
     }
 
     function renderResult(result) {
@@ -2354,30 +2517,45 @@ INDEX_HTML = r"""<!doctype html>
 
       const previewPath = result.gzh_formatting && result.gzh_formatting.preview_html;
       const xhsNote = result.llm_drafts && result.llm_drafts.xhs_note;
+      const xhsLayout = result.xhs_layout || null;
       previewEl.innerHTML = previewPath
         ? `<iframe src="/file?path=${encodeURIComponent(previewPath)}"></iframe><p class="path">${escapeHtml(previewPath)}</p>`
         : xhsNote
-          ? renderXhsPreview(xhsNote)
+          ? renderXhsPreview(xhsNote, xhsLayout)
           : '<p class="empty">没有生成预览内容。</p>';
 
       const coverPath = result.cover_image && result.cover_image.path;
       const draft = result.wechat_draft ? JSON.stringify(result.wechat_draft.response, null, 2) : "";
       assetsEl.innerHTML = [
-        coverPath ? `<img class="cover" src="/file?path=${encodeURIComponent(coverPath)}"><p class="path">${escapeHtml(coverPath)}</p><a class="login" href="/file?path=${encodeURIComponent(coverPath)}" target="_blank" rel="noopener">打开/保存封面图</a>` : "",
+        xhsLayout && xhsLayout.zip_path
+          ? `<div class="xhs-package-summary"><strong>图文发布包已就绪</strong><span class="empty">共 ${Number((xhsLayout.cards || []).length)} 张 3:4 高清图片</span><a href="/file?path=${encodeURIComponent(xhsLayout.zip_path)}" download>打包下载全部图片</a></div>`
+          : coverPath ? `<img class="cover" src="/file?path=${encodeURIComponent(coverPath)}"><p class="path">${escapeHtml(coverPath)}</p><a class="login" href="/file?path=${encodeURIComponent(coverPath)}" target="_blank" rel="noopener">打开/保存封面图</a>` : "",
         draft ? `<pre>${escapeHtml(draft)}</pre>` : "",
         result.wechat_draft_error ? `<p class="error">${escapeHtml(result.wechat_draft_error)}</p>` : ""
       ].filter(Boolean).join("") || '<p class="empty">没有封面或草稿结果。</p>';
       renderSubmitGate(result);
     }
 
-    function renderXhsPreview(note) {
+    function renderXhsPreview(note, layout) {
+      const publishText = layout && layout.publish_text ? layout.publish_text : note;
+      const tags = layout && layout.tags ? layout.tags.join(" ") : extractTags(publishText);
+      const cards = layout && layout.cards ? layout.cards : [];
+      const gallery = cards.length ? `<div class="xhs-card-gallery">${cards.map(card => `
+        <a class="xhs-card-item" href="/file?path=${encodeURIComponent(card.path)}" target="_blank" rel="noopener">
+          <img src="/file?path=${encodeURIComponent(card.path)}" alt="${escapeHtml(card.title || "小红书图文卡片")}">
+          <span>${Number(card.index)}. ${escapeHtml(card.title || card.kind || "图文卡片")}</span>
+        </a>
+      `).join("")}</div>` : '<p class="empty">正文已生成，继续执行“图文排版”即可获得多图发布包。</p>';
       return `
         <div class="xhs-actions">
-          <button class="primary-action" type="button" onclick="copyXhsPackage()">复制发布包</button>
+          <button class="primary-action" type="button" onclick="copyXhsPackage()">复制发布文案</button>
           <button type="button" onclick="copyXhsTags()">复制标签</button>
+          ${layout && layout.zip_path ? `<a href="/file?path=${encodeURIComponent(layout.zip_path)}" download>打包下载全部图片</a>` : ""}
           <a href="https://creator.xiaohongshu.com/publish/publish?source=official" target="_blank" rel="noopener">打开小红书创作平台</a>
         </div>
-        <pre id="xhsNotePreview">${escapeHtml(note)}</pre>
+        ${gallery}
+        <pre id="xhsNotePreview" class="xhs-copy-preview">${escapeHtml(publishText)}</pre>
+        <span id="xhsTagsPreview" hidden>${escapeHtml(tags)}</span>
       `;
     }
 
@@ -2392,8 +2570,8 @@ INDEX_HTML = r"""<!doctype html>
     }
 
     function copyXhsTags() {
-      const text = document.getElementById("xhsNotePreview")?.textContent || "";
-      copyText(extractTags(text));
+      const tags = document.getElementById("xhsTagsPreview")?.textContent || "";
+      copyText(tags || extractTags(document.getElementById("xhsNotePreview")?.textContent || ""));
     }
 
     async function copyText(text) {
@@ -2417,7 +2595,19 @@ INDEX_HTML = r"""<!doctype html>
       if (isBusy) {
         submitDraftButton.disabled = true;
         xhsPublishedButton.disabled = true;
+      } else {
+        syncChannelControls();
       }
+    }
+
+    function syncChannelControls() {
+      const isXhs = channelSelect.value === "xiaohongshu";
+      formatThemeField.hidden = isXhs;
+      xhsLayoutThemeField.hidden = !isXhs;
+      const formatButton = document.querySelector('[data-step="format"]');
+      const xhsLayoutButton = document.querySelector('[data-step="xhs-layout"]');
+      formatButton.hidden = isXhs;
+      xhsLayoutButton.hidden = !isXhs;
     }
 
     function statusLabel(status) {
@@ -2435,18 +2625,19 @@ INDEX_HTML = r"""<!doctype html>
     function renderSubmitGate(result) {
       const channel = document.getElementById("channel").value;
       const xhsNote = Boolean(result.llm_drafts && result.llm_drafts.xhs_note);
+      const xhsLayout = Boolean(result.xhs_layout && (result.xhs_layout.cards || []).length);
       const hasPreview = Boolean(result.gzh_formatting && result.gzh_formatting.clean_html);
       const hasCover = Boolean(result.cover_image && result.cover_image.path);
       const submitted = Boolean(result.wechat_draft);
       if (channel === "xiaohongshu") {
         submitDraftButton.disabled = true;
-        xhsPublishedButton.disabled = !xhsNote || !currentJobId;
+        xhsPublishedButton.disabled = !xhsLayout || !currentJobId;
         if (!xhsNote) {
           submitHint.textContent = "请先生成小红书发布包。";
+        } else if (!xhsLayout) {
+          submitHint.textContent = "正文已生成，请继续执行图文排版。";
         } else {
-          submitHint.textContent = hasCover
-            ? "复制发布包并保存封面，发布完成后可标记已发布。"
-            : "复制发布包后手动配图，或先生成封面。";
+          submitHint.textContent = "预览图文包并下载图片，发布完成后可标记已发布。";
         }
         return;
       }

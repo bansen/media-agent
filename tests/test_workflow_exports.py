@@ -231,7 +231,9 @@ class WorkflowExportTests(unittest.TestCase):
         prompt = result.cover_prompt.lower()
 
         self.assertIn("office wellness break", prompt)
-        self.assertIn("4:5 vertical social cover", prompt)
+        self.assertIn("3:4 vertical social cover", prompt)
+        self.assertIn("1080x1440", prompt)
+        self.assertNotIn("1600x900", prompt)
         self.assertNotIn("laptop", prompt)
         self.assertNotIn("technology feeling", prompt)
 

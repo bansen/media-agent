@@ -58,7 +58,10 @@ class GenerationTests(unittest.TestCase):
         self.assertIn("小红书", llm.prompts[0])
         self.assertIn("Xiaohongshu Content Skill", llm.prompts[0])
         self.assertIn("Viral hooks", llm.prompts[0])
-        self.assertIn("封面图组", llm.prompts[0])
+        self.assertIn("Xiaohongshu Layout Skill", llm.prompts[0])
+        self.assertIn("Exclude layout instructions", llm.prompts[0])
+        self.assertIn("输出只包含标题、正文、标签", llm.prompts[0])
+        self.assertIn("不要输出封面图组", llm.prompts[0])
 
     def test_wechat_prompt_locks_keyword_and_selected_material(self):
         result = run_keyword_workflow(
@@ -244,9 +247,10 @@ class GenerationTests(unittest.TestCase):
 
         xhs_prompt = llm.prompts[0]
         self.assertIn("Treat the user input as a creative brief", xhs_prompt)
-        self.assertIn("Health/lifestyle", xhs_prompt)
+        self.assertIn("health/lifestyle notes", xhs_prompt)
         self.assertIn("never diagnose", xhs_prompt)
-        self.assertIn("封面图组数量必须和正文方法点数匹配", xhs_prompt)
+        self.assertIn("正文主要方法使用连续编号", xhs_prompt)
+        self.assertIn("Use 3:4 portrait images", xhs_prompt)
         self.assertIn("办公室久坐人群", xhs_prompt)
 
 

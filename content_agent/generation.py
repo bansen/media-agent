@@ -96,9 +96,11 @@ def _xhs_prompt(result: WorkflowResult) -> str:
             "你是小红书图文笔记编辑，请生成适合手动发布的小红书内容。",
             "以下是必须遵循的小红书内容生成 Skill：",
             load_content_skill("xiaohongshu_content"),
+            "以下是后续图文排版必须遵循的 Skill，请让正文编号结构可被逐点排版：",
+            load_content_skill("xiaohongshu_layout"),
             *material,
             result.xhs_package,
-            "要求：标题 20 字内；正文生活化；包含标签；健康内容禁止诊断和治疗承诺；封面图组数量必须和正文方法点数匹配。",
+            "要求：标题 20 字内；正文生活化；包含标签；健康内容禁止诊断和治疗承诺；输出只包含标题、正文、标签，不要输出封面图组或排版说明；正文主要方法使用连续编号。",
         ]
     )
 

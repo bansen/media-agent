@@ -101,6 +101,7 @@ def build_cover_strategy(topic: TopicBrief, brief: CreativeBrief, channel: str =
 
 def build_cover_prompt_from_strategy(topic: TopicBrief, strategy: dict[str, str], channel: str = "wechat") -> str:
     style = _cover_style_for(topic, channel)
+    dimensions = "1080x1440" if channel == "xiaohongshu" else "1600x900"
     return (
         "Replicate image prompt: "
         f"{style}. Main idea: {topic.optimized_title}. "
@@ -109,7 +110,7 @@ def build_cover_prompt_from_strategy(topic: TopicBrief, strategy: dict[str, str]
         f"Primary subject: {strategy.get('subject', 'a vivid scene matching the article topic')}. "
         f"Scene concept: {strategy.get('scene', 'complete realistic editorial scene')}. "
         "Use a complete background scene with balanced composition, vivid subject, sharp details, "
-        "natural negative space for later title overlay, 1600x900 high-resolution output. "
+        f"natural negative space for later title overlay, {dimensions} high-resolution output. "
         "No text, no blank white rectangle, no paper sheet, no poster board, no floating card, "
         "no money piles, no medical claims, no exaggerated symbols. "
         f"Avoid: {strategy.get('negative', '')}."
@@ -133,7 +134,7 @@ def apply_cover_style(base_style: str, cover_style: str = "business-tech") -> st
 
 def _cover_style_for(topic: TopicBrief, channel: str) -> str:
     title = f"{topic.title} {topic.optimized_title} {topic.angle}"
-    ratio = "4:5 vertical social cover" if channel == "xiaohongshu" else "16:9 wide cover"
+    ratio = "3:4 vertical social cover" if channel == "xiaohongshu" else "16:9 wide cover"
 
     if _contains_any(title, ["GitHub 开源项目", "开源项目", "Agent", "智能体", "数字员工", "工作系统"]):
         return (

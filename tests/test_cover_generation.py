@@ -90,6 +90,25 @@ class CoverGenerationTests(unittest.TestCase):
 
         self.assertAlmostEqual(width / height, 16 / 9, places=2)
 
+    def test_generates_xiaohongshu_cover_as_three_to_four(self):
+        runner = FakeImageReplicateRunner()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cover = generate_cover_image(
+                prompt="bright lifestyle cover",
+                output_dir=Path(tmpdir),
+                basename="秋季养生",
+                model="black-forest-labs/flux-1.1-pro",
+                runner=runner,
+                aspect_ratio="3:4",
+            )
+
+            with Image.open(cover.path) as image:
+                size = image.size
+
+        self.assertEqual(runner.calls[0][1]["aspect_ratio"], "3:4")
+        self.assertEqual(size, (1080, 1440))
+
     def test_sets_replicate_token_for_sdk_without_printing_it(self):
         runner = FakeReplicateRunner()
         old_token = os.environ.get("REPLICATE_API_TOKEN")

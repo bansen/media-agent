@@ -76,11 +76,15 @@ def generate_cover_image(
     model: str,
     runner: ReplicateRunner | None = None,
     api_token: str = "",
+    aspect_ratio: str = "16:9",
 ) -> GeneratedCover:
     if not prompt.strip():
         raise ValueError("prompt cannot be empty")
     if not model.strip():
         raise ValueError("replicate model cannot be empty")
+    output_sizes = {"16:9": (1600, 900), "3:4": (1080, 1440)}
+    if aspect_ratio not in output_sizes:
+        raise ValueError(f"unsupported cover aspect ratio: {aspect_ratio}")
     if api_token:
         os.environ["REPLICATE_API_TOKEN"] = api_token
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -92,13 +96,13 @@ def generate_cover_image(
         input={
             "prompt": clean_prompt,
             "prompt_upsampling": True,
-            "aspect_ratio": "16:9",
+            "aspect_ratio": aspect_ratio,
         },
     )
     file_output = output[0] if isinstance(output, list) else output
     image_bytes = file_output.read()
     path = output_dir / f"{basename}_cover.jpg"
-    _write_cover_image(image_bytes, path)
+    _write_cover_image(image_bytes, path, output_sizes[aspect_ratio])
     return GeneratedCover(
         path=path,
         url=getattr(file_output, "url", ""),
@@ -121,10 +125,10 @@ def _clean_replicate_prompt(prompt: str) -> str:
     return prompt.removeprefix("Replicate image prompt:").strip()
 
 
-def _write_cover_image(image_bytes: bytes, path: Path) -> None:
+def _write_cover_image(image_bytes: bytes, path: Path, output_size: tuple[int, int]) -> None:
     try:
         with Image.open(BytesIO(image_bytes)) as image:
-            cover = ImageOps.fit(image.convert("RGB"), (1600, 900), method=Image.Resampling.LANCZOS)
+            cover = ImageOps.fit(image.convert("RGB"), output_size, method=Image.Resampling.LANCZOS)
             cover.save(path, format="JPEG", quality=94, optimize=True, progressive=False)
     except (OSError, UnidentifiedImageError):
         path.write_bytes(image_bytes)

@@ -9,7 +9,8 @@ class SkillLoaderTests(unittest.TestCase):
 
         self.assertIn("name: xiaohongshu_content", skill)
         self.assertIn("Xiaohongshu Content Skill", skill)
-        self.assertIn("Cover Card Plan", skill)
+        self.assertIn("only publishable Xiaohongshu copy", skill)
+        self.assertIn("Do not include a cover-card plan", skill)
 
     def test_rejects_nested_skill_names(self):
         with self.assertRaisesRegex(ValueError, "invalid skill name"):
