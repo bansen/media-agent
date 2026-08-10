@@ -6,6 +6,7 @@ from typing import Protocol
 
 from .content_planner import build_content_plan
 from .models import WorkflowResult
+from .skill_loader import load_content_skill
 
 
 class TextGenerationProvider(Protocol):
@@ -77,11 +78,18 @@ def _wechat_prompt(result: WorkflowResult) -> str:
 
 
 def _xhs_prompt(result: WorkflowResult) -> str:
+    topic = result.topics[0]
+    material = [f"选中素材：{topic.title}"]
+    if topic.source_summary.strip():
+        material.extend(["素材摘要：", topic.source_summary.strip()])
     return "\n\n".join(
         [
             "你是小红书图文笔记编辑，请生成适合手动发布的小红书内容。",
+            "以下是必须遵循的小红书内容生成 Skill：",
+            load_content_skill("xiaohongshu_content"),
+            *material,
             result.xhs_package,
-            "要求：标题 20 字内；正文生活化；包含标签；健康内容禁止诊断和治疗承诺。",
+            "要求：标题 20 字内；正文生活化；包含标签；健康内容禁止诊断和治疗承诺；封面图组数量必须和正文方法点数匹配。",
         ]
     )
 

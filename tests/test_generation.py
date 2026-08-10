@@ -46,6 +46,9 @@ class GenerationTests(unittest.TestCase):
         self.assertIn("公众号", llm.prompts[0])
         self.assertIn("不要承诺日更或固定更新频率", llm.prompts[0])
         self.assertIn("小红书", llm.prompts[1])
+        self.assertIn("Xiaohongshu Content Skill", llm.prompts[1])
+        self.assertIn("Viral hooks", llm.prompts[1])
+        self.assertIn("封面图组", llm.prompts[1])
 
     def test_wechat_prompt_locks_keyword_and_selected_material(self):
         result = run_keyword_workflow(
@@ -206,6 +209,36 @@ class GenerationTests(unittest.TestCase):
                 "Generating xhs_note with LLM",
             ],
         )
+
+    def test_xhs_prompt_uses_project_skill_for_health_note_generation(self):
+        result = run_keyword_workflow(
+            "小红书健康养生，写给 20-45 岁职场女性和宝妈，内容要生活化、可收藏",
+            [
+                CandidateContent(
+                    title="办公室久坐人群，一天 4 个时间点这样调整",
+                    source="baidu_search",
+                    url="https://example.com/health",
+                    heat=78,
+                    interaction=80,
+                    hook=84,
+                    pain=88,
+                    reuse=90,
+                    material=72,
+                    summary="久坐人群可以通过间歇活动、喝水提醒和睡前放松建立低成本习惯。",
+                )
+            ],
+            primary_channel="xiaohongshu",
+        )
+        llm = FakeLLMProvider()
+
+        generate_llm_drafts(result, llm)
+
+        xhs_prompt = llm.prompts[1]
+        self.assertIn("Treat the user input as a creative brief", xhs_prompt)
+        self.assertIn("Health/lifestyle", xhs_prompt)
+        self.assertIn("never diagnose", xhs_prompt)
+        self.assertIn("封面图组数量必须和正文方法点数匹配", xhs_prompt)
+        self.assertIn("办公室久坐人群", xhs_prompt)
 
 
 if __name__ == "__main__":
