@@ -45,6 +45,12 @@ class DeployAssetTests(unittest.TestCase):
         self.assertIn("COPY .env.example ./.env.example", dockerfile)
         self.assertIn("--host\", \"0.0.0.0", dockerfile)
 
+    def test_docker_image_installs_npx_for_websearch_mcp(self):
+        dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+        self.assertIn("nodejs", dockerfile)
+        self.assertIn("npm", dockerfile)
+
     def test_deploy_script_bootstraps_env_file_for_first_run(self):
         script = (PROJECT_ROOT / "scripts" / "deploy.sh").read_text(encoding="utf-8")
 
