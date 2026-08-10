@@ -1265,6 +1265,8 @@ def _collect_candidates(options: WebRunOptions, progress: Callable[[str], None] 
 
 
 def _websearch_mcp_runner(config: AgentConfig) -> StdioMCPToolRunner:
+    if not config.tavily_api_key.strip():
+        raise RuntimeError("生产环境缺少 TAVILY_API_KEY，请在服务器 /opt/media-agent/.env.production 中配置后重启服务。")
     return StdioMCPToolRunner(
         command=config.websearch_mcp_command,
         args=config.websearch_mcp_args,

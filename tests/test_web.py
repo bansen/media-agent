@@ -266,6 +266,36 @@ class WebTests(unittest.TestCase):
         self.assertIn("正在通过 WebSearch MCP 读取链接内容", events)
         self.assertIn("正在用百度搜索补充外部素材", events)
 
+    def test_run_agent_workflow_reports_missing_tavily_key_before_starting_mcp(self):
+        with patch("content_agent.web.AgentConfig.from_env_file") as from_env:
+            from_env.return_value = AgentConfig(
+                llm_provider="deepseek",
+                llm_base_url="https://api.deepseek.com",
+                llm_model="deepseek-chat",
+                llm_api_key="",
+                replicate_api_token="",
+                replicate_cover_model_version="",
+                replicate_cover_model="black-forest-labs/flux-1.1-pro",
+                wechat_app_id="",
+                wechat_app_secret="",
+                wechat_access_token="",
+                free_hot_sources=[],
+                database_url="",
+                baidu_search_api_key="baidu-secret",
+                websearch_mcp_enabled=True,
+                tavily_api_key="",
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "生产环境缺少 TAVILY_API_KEY"):
+                run_agent_workflow(
+                    WebRunOptions(
+                        keyword="写一篇分享 https://github.com/huangruiteng/loopx/blob/main/README.zh-CN.md 的文章",
+                        channel="wechat",
+                        collector="baidu_search",
+                        format_gzh=False,
+                    )
+                )
+
     def test_web_rejects_paid_public_search_collector(self):
         with self.assertRaisesRegex(ValueError, "collector must be baidu_search"):
             run_agent_workflow(WebRunOptions(keyword="AI副业", channel="wechat", collector="public_search"))

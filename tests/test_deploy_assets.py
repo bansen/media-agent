@@ -58,6 +58,13 @@ class DeployAssetTests(unittest.TestCase):
         self.assertIn("Created $APP_DIR/$ENV_FILE", script)
         self.assertIn("compose up -d", script)
 
+    def test_deploy_script_checks_tavily_key_when_websearch_mcp_is_enabled(self):
+        script = (PROJECT_ROOT / "scripts" / "deploy.sh").read_text(encoding="utf-8")
+
+        self.assertIn("WEBSEARCH_MCP_ENABLED", script)
+        self.assertIn("TAVILY_API_KEY", script)
+        self.assertIn("Missing TAVILY_API_KEY", script)
+
 
 if __name__ == "__main__":
     unittest.main()

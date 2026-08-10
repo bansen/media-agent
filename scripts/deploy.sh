@@ -17,6 +17,16 @@ if [ ! -f "$ENV_FILE" ]; then
   fi
 fi
 
+env_value() {
+  key="$1"
+  grep -E "^${key}=" "$ENV_FILE" | tail -n 1 | cut -d= -f2-
+}
+
+if [ "$(env_value WEBSEARCH_MCP_ENABLED)" = "true" ] && [ -z "$(env_value TAVILY_API_KEY)" ]; then
+  echo "Missing TAVILY_API_KEY in $APP_DIR/$ENV_FILE while WEBSEARCH_MCP_ENABLED=true"
+  exit 1
+fi
+
 compose() {
   docker compose --env-file "$ENV_FILE" -f docker-compose.prod.yml "$@"
 }

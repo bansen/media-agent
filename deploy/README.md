@@ -57,6 +57,16 @@ cp .env.example .env.production
 
 然后你需要登录服务器填写 DeepSeek、Replicate、微信公众号等真实密钥；已有 `.env.production` 时部署不会覆盖。
 
+如果启用 WebSearch MCP 读取 GitHub、官网或文档链接，已有 `.env.production` 还需要补充：
+
+```env
+WEBSEARCH_MCP_ENABLED=true
+WEBSEARCH_MCP_COMMAND=npx
+WEBSEARCH_MCP_ARGS=-y,tavily-mcp@0.1.3
+WEBSEARCH_MCP_TIMEOUT=60
+TAVILY_API_KEY=your_tavily_key
+```
+
 ## 4. Nginx 二级域名
 
 GitHub Actions 会把 `deploy/nginx.media-agent.conf` 同步到服务器，并在服务器安装了 Nginx 时自动写入：
