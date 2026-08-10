@@ -371,6 +371,37 @@ class WebTests(unittest.TestCase):
         self.assertIn("realistic lifestyle photography", payload["cover_prompt"])
         self.assertNotIn("business technology editorial photo", payload["cover_prompt"])
 
+    def test_run_agent_workflow_keeps_github_cover_subject_when_style_changes(self):
+        candidate = CandidateContent(
+            title="GitHub 开源项目：huangruiteng/loopx - 项目资料",
+            source="baidu_search",
+            url="https://github.com/huangruiteng/loopx",
+            heat=92,
+            interaction=88,
+            hook=84,
+            pain=80,
+            reuse=92,
+            material=96,
+            summary="LoopX 给现有 Agent 补上一层长期工作控制系统。",
+        )
+
+        with patch("content_agent.web.collect_baidu_search_candidates", return_value=[candidate]):
+            payload = run_agent_workflow(
+                WebRunOptions(
+                    keyword="写一篇分享 LoopX 开源项目的文章",
+                    channel="wechat",
+                    collector="baidu_search",
+                    cover_style="real-photo",
+                    format_gzh=False,
+                )
+            )
+
+        prompt = payload["cover_prompt"].lower()
+        self.assertIn("open-source agent system", prompt)
+        self.assertIn("realistic cinematic product visualization", prompt)
+        self.assertNotIn("realistic lifestyle photography", prompt)
+        self.assertNotIn("office desk", prompt)
+
     def test_step_prerequisites_block_missing_previous_steps(self):
         with self.assertRaisesRegex(ValueError, "请先搜素材"):
             validate_step_prerequisites("content", None)

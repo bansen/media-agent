@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from .content_planner import strip_urls
+from .content_planner import build_content_plan_for_text, strip_urls
 from .creative_brief import CreativeBrief, build_creative_brief, is_creative_prompt
 from .keyword_intent import extract_keyword_entity, extract_keyword_modifiers, parse_keyword_intent
 from .models import ContentChannel
@@ -67,6 +67,9 @@ def _legacy_optimize_title(title: str, channel: ContentChannel, keyword: str = "
 
 def _candidate_titles(title: str, channel: ContentChannel, keyword: str, brief: CreativeBrief) -> list[str]:
     legacy = _legacy_optimize_title(title, channel, keyword=keyword)
+    plan = build_content_plan_for_text(title, prompt=keyword)
+    if plan.content_type == "github_project_share" and plan.title_angles:
+        return _dedupe(plan.title_angles)
     if _looks_like_github_project(title, keyword):
         return _dedupe(_github_project_title_candidates(title))
     if channel == "xiaohongshu" or _looks_like_health(f"{title} {brief.topic}"):

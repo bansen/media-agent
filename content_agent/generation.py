@@ -4,6 +4,7 @@ from collections.abc import Callable
 import re
 from typing import Protocol
 
+from .content_planner import build_content_plan
 from .models import WorkflowResult
 
 
@@ -37,10 +38,14 @@ def generate_llm_drafts(
 
 def _wechat_prompt(result: WorkflowResult) -> str:
     topic = result.topics[0]
+    plan = build_content_plan(topic, result.keyword)
     opening_rule = []
     if "工具接入教程" in result.wechat_outline:
         opening_rule.append("开头必须直接进入工具接入场景，第一段说明要接入什么、验证什么、读者能得到什么。")
         opening_rule.append("不要写“学 AI 做作品”、副业、面试、HR、读者投稿等泛用故事。")
+    if plan.content_type == "github_project_share":
+        opening_rule.append("开头必须先写 Agent 使用痛点，不要用“今天分享一个 GitHub 链接/项目”开场。")
+        opening_rule.append("正文可以提项目名，但不要在正文中反复展示 URL；项目地址只放在文末一次。")
     material_summary = []
     if topic.source_summary.strip():
         material_summary.append("素材摘要：")
@@ -55,6 +60,11 @@ def _wechat_prompt(result: WorkflowResult) -> str:
                 f"文章一级标题必须严格使用《{topic.optimized_title}》；"
                 f"正文需要解释素材《{topic.title}》与读者的关系；"
                 "禁止泛化成 AI 学习、副业赚钱等无关主题。"
+            ),
+            (
+                "内容质量红线：不要把用户提示词、搜索链接、来源标题当正文复制；"
+                "不要连续两个小节重复同一观点；每个小标题下面必须提供新的信息、判断或行动；"
+                "如果写卡片、清单或关键问题，数量必须和正文展开的点数一致。"
             ),
             (
                 "输出格式：只输出 Markdown 正文，第一行必须是 # 标题；"

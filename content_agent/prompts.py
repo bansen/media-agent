@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .content_planner import build_content_plan, strip_urls
+from .content_planner import build_content_plan, render_wechat_content_playbook, strip_urls
 from .creative_brief import CreativeBrief, build_creative_brief
 from .keyword_intent import parse_keyword_intent
 from .models import TopicBrief
@@ -38,6 +38,7 @@ def build_wechat_outline(topic: TopicBrief, keyword: str = "") -> str:
         positioning = f"定位：写给{audience}。"
         topic_lock = "主题锁定：全文必须先回应创作主题和目标读者，再结合选中素材展开，不要改写成泛泛的 AI 学习或副业赚钱文章。"
         structure = _structure_for(brief)
+    playbook_lines = render_wechat_content_playbook(plan)
     return "\n".join(
         [
             f"公众号文章：《{topic.optimized_title}》",
@@ -46,6 +47,7 @@ def build_wechat_outline(topic: TopicBrief, keyword: str = "") -> str:
             source_line,
             positioning,
             topic_lock,
+            *playbook_lines,
             structure,
             f"角度：{topic.angle}",
             "合规：不承诺收益，不制造暴富焦虑，所有案例需标注来源或改为匿名经验。",
@@ -91,7 +93,9 @@ def build_cover_strategy(topic: TopicBrief, brief: CreativeBrief, channel: str =
         "audience": audience,
         "emotion": emotion,
         "scene": scene,
+        "subject": plan.cover_subject or _cover_subject_for(topic, brief, channel),
         "avoid": "文字、白色卡片、纸张、海报板、夸张金钱符号、医疗承诺",
+        "negative": plan.cover_negative,
     }
 
 
@@ -102,11 +106,13 @@ def build_cover_prompt_from_strategy(topic: TopicBrief, strategy: dict[str, str]
         f"{style}. Main idea: {topic.optimized_title}. "
         f"Core message: {strategy.get('core_message', topic.optimized_title)}. "
         f"Audience mood: {strategy.get('emotion', 'practical and clear')}. "
+        f"Primary subject: {strategy.get('subject', 'a vivid scene matching the article topic')}. "
         f"Scene concept: {strategy.get('scene', 'complete realistic editorial scene')}. "
         "Use a complete background scene with balanced composition, vivid subject, sharp details, "
         "natural negative space for later title overlay, 1600x900 high-resolution output. "
         "No text, no blank white rectangle, no paper sheet, no poster board, no floating card, "
-        "no money piles, no medical claims, no exaggerated symbols."
+        "no money piles, no medical claims, no exaggerated symbols. "
+        f"Avoid: {strategy.get('negative', '')}."
     )
 
 
@@ -114,6 +120,14 @@ def apply_cover_style(base_style: str, cover_style: str = "business-tech") -> st
     selected = (cover_style or "business-tech").strip()
     if selected not in COVER_STYLE_GUIDANCE:
         raise ValueError(f"unsupported cover style: {cover_style}")
+    if "open-source agent system" in base_style:
+        style_note = {
+            "business-tech": "technical product visualization, crisp interface-like lighting, high-resolution",
+            "real-photo": "realistic cinematic product visualization, believable depth, no generic workplace setup",
+            "minimal-illustration": "minimal editorial illustration of connected agent workflow nodes",
+            "knowledge-card": "knowledge-sharing composition with abstract task graph, no text",
+        }[selected]
+        return f"{base_style}, {style_note}"
     return f"{COVER_STYLE_GUIDANCE[selected]}, {base_style}"
 
 
@@ -211,3 +225,18 @@ def _cover_scene_for(topic: TopicBrief, brief: CreativeBrief, channel: str) -> s
     if _contains_any(text, ["接入", "API", "Codex", "DeepSeek"]):
         return "developer workspace with code editor and image preview on screen, clean technical atmosphere"
     return "modern editorial workspace connected to the article topic"
+
+
+def _cover_subject_for(topic: TopicBrief, brief: CreativeBrief, channel: str) -> str:
+    text = f"{topic.optimized_title} {topic.title} {brief.topic}"
+    if channel == "xiaohongshu":
+        return "a concrete lifestyle habit scene matching the note topic"
+    if _contains_any(text, ["GitHub 开源项目", "开源项目", "Agent", "智能体", "数字员工", "工作系统"]):
+        return "an abstract agent workflow system made of task nodes, memory context and automation timeline"
+    if _contains_any(text, ["视频", "创作者"]):
+        return "a creator planning a video workflow with timeline and media controls"
+    if _contains_any(text, ["接单", "副业", "第一单"]):
+        return "an independent creator turning ideas into a small deliverable service workflow"
+    if _contains_any(text, ["接入", "API", "Codex", "DeepSeek"]):
+        return "a developer validating an AI tool integration with a clean technical interface"
+    return "a concrete subject that visually represents the article's main problem"
