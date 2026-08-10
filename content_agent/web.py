@@ -2023,6 +2023,18 @@ INDEX_HTML = r"""<!doctype html>
       border-radius: 8px;
       background: #f0f2ed;
     }
+    .cover.xhs-cover {
+      width: min(100%, 360px);
+      aspect-ratio: 3 / 4;
+      margin-inline: auto;
+    }
+    .panel pre {
+      max-width: 100%;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
     .empty { color: var(--muted); font-size: 13px; line-height: 1.6; }
     .error { color: var(--red); font-weight: 700; }
     .path { word-break: break-all; color: var(--blue); font-size: 12px; margin-top: 8px; }
@@ -2525,11 +2537,12 @@ INDEX_HTML = r"""<!doctype html>
           : '<p class="empty">没有生成预览内容。</p>';
 
       const coverPath = result.cover_image && result.cover_image.path;
+      const coverClass = xhsNote ? "cover xhs-cover" : "cover";
       const draft = result.wechat_draft ? JSON.stringify(result.wechat_draft.response, null, 2) : "";
       assetsEl.innerHTML = [
         xhsLayout && xhsLayout.zip_path
           ? `<div class="xhs-package-summary"><strong>图文发布包已就绪</strong><span class="empty">共 ${Number((xhsLayout.cards || []).length)} 张 3:4 高清图片</span><a href="/file?path=${encodeURIComponent(xhsLayout.zip_path)}" download>打包下载全部图片</a></div>`
-          : coverPath ? `<img class="cover" src="/file?path=${encodeURIComponent(coverPath)}"><p class="path">${escapeHtml(coverPath)}</p><a class="login" href="/file?path=${encodeURIComponent(coverPath)}" target="_blank" rel="noopener">打开/保存封面图</a>` : "",
+          : coverPath ? `<img class="${coverClass}" src="/file?path=${encodeURIComponent(coverPath)}"><p class="path">${escapeHtml(coverPath)}</p><a class="login" href="/file?path=${encodeURIComponent(coverPath)}" target="_blank" rel="noopener">打开/保存封面图</a>` : "",
         draft ? `<pre>${escapeHtml(draft)}</pre>` : "",
         result.wechat_draft_error ? `<p class="error">${escapeHtml(result.wechat_draft_error)}</p>` : ""
       ].filter(Boolean).join("") || '<p class="empty">没有封面或草稿结果。</p>';
