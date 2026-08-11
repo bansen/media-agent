@@ -81,6 +81,8 @@ class TitleLabTests(unittest.TestCase):
         self.assertIn("Obsidian", title)
         self.assertIn("知识库", title)
         self.assertNotIn("Codex怎么入门", title)
+        self.assertNotRegex(title, r"\d+")
+        self.assertNotRegex(title, r"[一二三四五六七八九十]+(?:步|个|点|种)")
         self.assertIn("个人知识工作流", result.wechat_outline)
 
     def test_workflow_deduplicates_repeated_optimized_titles_from_similar_sources(self):
