@@ -56,6 +56,9 @@ def _wechat_prompt(result: WorkflowResult) -> str:
     if plan.content_type == "github_project_share":
         opening_rule.append("开头必须先写 Agent 使用痛点，不要用“今天分享一个 GitHub 链接/项目”开场。")
         opening_rule.append("正文可以提项目名，但不要在正文中反复展示 URL；项目地址只放在文末一次。")
+    if plan.content_type == "knowledge_workflow":
+        opening_rule.append("正文主线必须依次覆盖资料进入、Codex 整理、Obsidian 链接沉淀和检索复用。")
+        opening_rule.append("Codex、Obsidian、个人知识库缺一不可；不要改写成泛泛的 AI 工具介绍或 Codex 入门。")
     material_summary = []
     if topic.source_summary.strip():
         material_summary.append("素材摘要：")

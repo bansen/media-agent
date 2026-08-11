@@ -55,6 +55,7 @@ def extract_keyword_entities(keyword: str) -> list[str]:
         (r"(?i)\bdeepseek[-\s]*v4[-\s]*flash\b", "DeepSeek V4 Flash"),
         (r"(?i)\bdeepseek\b", "DeepSeek"),
         (r"(?i)\bcodex\b", "Codex"),
+        (r"(?i)\bobsidian\b", "Obsidian"),
         (r"(?i)\bminimax\s*h\s*3\b", "MiniMax H3"),
         (r"(?i)\bchatgpt\b", "ChatGPT"),
         (r"(?i)\bclaude\b", "Claude"),
@@ -84,6 +85,10 @@ def extract_keyword_modifiers(keyword: str) -> list[str]:
         modifiers.append("API")
     if "开源" in clean:
         modifiers.append("开源")
+    if "搭建" in clean or "配合" in clean or "结合" in clean:
+        modifiers.append("搭建")
+    if "知识库" in clean or "第二大脑" in clean or "知识工作流" in clean:
+        modifiers.append("知识库")
     if "避坑" in clean or "坑" in clean:
         modifiers.append("避坑")
     return _dedupe(modifiers)
@@ -131,6 +136,8 @@ def _normalize_known_entity(value: str) -> str:
 
 
 def _task_kind(keyword: str, entities: list[str], modifiers: list[str]) -> str:
+    if "知识库" in modifiers and any(entity in entities for entity in ["Codex", "Obsidian"]):
+        return "knowledge_workflow"
     if len(entities) >= 2 and any(term in modifiers for term in ["接入", "识图", "API"]):
         return "tool_integration"
     if any(term in modifiers for term in ["接入", "识图", "API"]) and entities:

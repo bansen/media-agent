@@ -93,6 +93,8 @@ def _angle_for(title: str, is_health: bool, keyword: str = "") -> str:
     if intent.task_kind == "tool_integration":
         focus = "、".join([*intent.entities, *intent.modifiers])
         return f"把《{title}》写成工具接入教程，围绕 {focus} 做清晰步骤、验证结果和避坑提醒。"
+    if intent.task_kind == "knowledge_workflow":
+        return f"把《{title}》写成个人知识工作流教程，围绕资料进入、AI 整理、链接沉淀和检索复用展开。"
     return f"把《{title}》改成普通人能执行的副业/AI学习方法拆解。"
 
 
@@ -101,6 +103,8 @@ def _material_needs_for(is_health: bool, task_kind: str = "general") -> list[str
         return ["生活场景案例", "通用健康常识来源", "可执行习惯清单"]
     if task_kind == "tool_integration":
         return ["官方文档或 API 说明", "配置步骤截图", "识图验证样例", "常见报错和解决方法"]
+    if task_kind == "knowledge_workflow":
+        return ["资料入口示例", "Markdown 整理样例", "双向链接知识图谱", "检索复用案例"]
     return ["真实工具截图", "普通人案例", "步骤清单", "失败避坑"]
 
 

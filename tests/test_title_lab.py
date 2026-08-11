@@ -57,6 +57,32 @@ class TitleLabTests(unittest.TestCase):
         self.assertIn("视频", result.topics[0].optimized_title)
         self.assertNotIn("泛泛 AI 学习", result.topics[0].optimized_title)
 
+    def test_knowledge_workflow_title_keeps_tools_and_user_outcome(self):
+        result = run_keyword_workflow(
+            "用 Codex + Obsidian 搭建个人知识库",
+            candidates=[
+                CandidateContent(
+                    title="Codex怎么入门？先从三个真实场景开始",
+                    source="baidu_search",
+                    url="https://example.com/codex-start",
+                    heat=82,
+                    interaction=76,
+                    hook=80,
+                    pain=74,
+                    reuse=78,
+                    material=72,
+                )
+            ],
+            primary_channel="wechat",
+        )
+
+        title = result.topics[0].optimized_title
+        self.assertIn("Codex", title)
+        self.assertIn("Obsidian", title)
+        self.assertIn("知识库", title)
+        self.assertNotIn("Codex怎么入门", title)
+        self.assertIn("个人知识工作流", result.wechat_outline)
+
     def test_workflow_deduplicates_repeated_optimized_titles_from_similar_sources(self):
         prompt = (
             "我想写一篇公众号文章，主题是普通人如何用 AI 做副业，"

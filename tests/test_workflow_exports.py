@@ -212,6 +212,33 @@ class WorkflowExportTests(unittest.TestCase):
         self.assertIn("识图验证", result.wechat_outline)
         self.assertNotIn("副业/AI学习方法拆解", result.wechat_outline)
 
+    def test_knowledge_workflow_cover_uses_linked_notes_instead_of_generic_desk(self):
+        result = run_keyword_workflow(
+            "用 Codex + Obsidian 搭建个人知识库",
+            [
+                CandidateContent(
+                    title="Codex怎么入门？先从三个真实场景开始",
+                    source="baidu_search",
+                    url="https://example.com/codex-start",
+                    heat=82,
+                    interaction=76,
+                    hook=80,
+                    pain=74,
+                    reuse=78,
+                    material=72,
+                )
+            ],
+            primary_channel="wechat",
+        )
+
+        prompt = result.cover_prompt.lower()
+        self.assertIn("codex", prompt)
+        self.assertIn("obsidian", prompt)
+        self.assertIn("knowledge graph", prompt)
+        self.assertIn("linked markdown notes", prompt)
+        self.assertIn("generic office desk", prompt)
+        self.assertIn("laptop hero shot", prompt)
+
     def test_xiaohongshu_cover_prompt_adapts_to_health_topic(self):
         candidates = [
             CandidateContent(

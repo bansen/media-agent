@@ -78,6 +78,42 @@ def build_content_plan_for_text(title: str, prompt: str = "", source_summary: st
             cover_subject="由任务节点、上下文记忆、自动化时间线组成的 Agent 工作系统，而不是办公桌或普通电脑照片",
             cover_negative="generic workspace photography, computer hero shot, raw URL text, GitHub page screenshot, white card, poster board",
         )
+    if _is_knowledge_workflow(text):
+        return ContentPlan(
+            content_type="knowledge_workflow",
+            reader_hook="笔记和资料越存越多，真正要用时却找不到，也无法复用",
+            article_promise="搭建一条从资料进入、AI 整理、双向链接到检索复用的个人知识工作流。",
+            title_angles=[
+                "Codex + Obsidian 搭个人知识库，先做对这 3 步",
+                "别再堆笔记了，用 Codex + Obsidian 搭一套个人知识库",
+                "Codex + Obsidian 怎么配合？把零散资料变成个人知识库",
+                "用 Codex 整理、Obsidian 沉淀，个人知识库这样搭",
+                "资料总是找不到？用 Codex + Obsidian 重做个人知识库",
+            ],
+            title_rules=[
+                "标题必须同时保留 Codex、Obsidian 和个人知识库这个读者结果。",
+                "用痛点、结果或步骤制造点击理由，不要退化成泛 Codex 入门。",
+            ],
+            opening_rule="开头从资料越积越多却找不到、调不出的真实痛点切入。",
+            section_flow=[
+                "真实痛点：为什么收藏和笔记越多，知识反而越难调用。",
+                "资料进入：网页、文档和临时想法如何进入统一入口。",
+                "Codex 整理：如何提炼、归类并生成可维护的 Markdown 笔记。",
+                "Obsidian 沉淀：如何用双向链接把孤立笔记连接成知识网络。",
+                "检索复用：写作或工作时如何找到并组合已有知识。",
+                "维护边界：哪些内容要人工确认，怎样避免知识库继续变乱。",
+            ],
+            evidence_rule="搜索素材只用于补充工具能力和实践依据，不能把主题改写成泛 Codex 入门。",
+            ending_rule="结尾给出一个可以当天跑通的最小知识闭环。",
+            repetition_rule="资料进入、整理、链接、检索四个环节各自解决不同问题，不重复罗列工具优点。",
+            structure="结构：真实痛点 -> 资料进入 -> Codex 整理 -> Obsidian 链接沉淀 -> 检索复用 -> 维护边界。",
+            cover_scene=(
+                "personal knowledge system, linked-note knowledge graph, linked markdown notes, "
+                "scattered notes flowing into organized knowledge clusters"
+            ),
+            cover_subject="AI organizing linked markdown notes into a personal knowledge map",
+            cover_negative="generic office desk, laptop hero shot, headphones, potted plant, unreadable UI text",
+        )
     if _is_health_topic(text):
         return ContentPlan(
             content_type="lifestyle_health",
@@ -216,6 +252,12 @@ def _is_side_hustle_topic(text: str) -> bool:
 
 def _is_ai_tool_topic(text: str) -> bool:
     return any(term in text for term in ["AI", "大模型", "DeepSeek", "MiniMax", "Codex", "Claude", "工具", "模型", "API", "接入"])
+
+
+def _is_knowledge_workflow(text: str) -> bool:
+    has_knowledge_outcome = any(term in text for term in ["知识库", "第二大脑", "双向链接", "笔记整理", "知识工作流"])
+    has_workflow_tool = any(term.lower() in text.lower() for term in ["Obsidian", "Codex"])
+    return has_knowledge_outcome and has_workflow_tool
 
 
 def _github_project_name(text: str, url: str | None) -> str:

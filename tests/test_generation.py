@@ -186,6 +186,36 @@ class GenerationTests(unittest.TestCase):
         self.assertTrue(drafts["wechat_article"].startswith(f"# {result.topics[0].optimized_title}"))
         self.assertNotIn("# 别急着学AI", drafts["wechat_article"])
 
+    def test_knowledge_workflow_prompt_and_forced_title_share_one_topic(self):
+        result = run_keyword_workflow(
+            "用 Codex + Obsidian 搭建个人知识库",
+            [
+                CandidateContent(
+                    title="Codex怎么入门？先从三个真实场景开始",
+                    source="baidu_search",
+                    url="https://example.com/codex-start",
+                    heat=82,
+                    interaction=76,
+                    hook=80,
+                    pain=74,
+                    reuse=78,
+                    material=72,
+                )
+            ],
+        )
+        llm = FakeLLMProvider("# Codex 怎么入门\n\n泛化正文。")
+
+        drafts = generate_llm_drafts(result, llm)
+
+        selected = result.topics[0].optimized_title
+        self.assertTrue(drafts["wechat_article"].startswith(f"# {selected}"))
+        self.assertIn("Codex", selected)
+        self.assertIn("Obsidian", selected)
+        self.assertIn("知识库", selected)
+        self.assertIn("资料进入", llm.prompts[0])
+        self.assertIn("检索复用", llm.prompts[0])
+        self.assertIn("不要改写成泛泛的 AI 工具介绍", llm.prompts[0])
+
     def test_wechat_article_strips_assistant_preamble_and_title_labels(self):
         result = run_keyword_workflow(
             "minimax h3介绍",

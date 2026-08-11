@@ -29,6 +29,13 @@ def build_wechat_outline(topic: TopicBrief, keyword: str = "") -> str:
         positioning = "定位：GitHub 开源项目分享，写给关注 AI Agent、自动化工作流和开发效率的读者。"
         topic_lock = "主题锁定：全文必须围绕项目解决的问题、项目思路和适用人群展开，链接只在文末作为项目地址出现，不要把链接写进标题。"
         structure = plan.structure
+    elif plan.content_type == "knowledge_workflow":
+        positioning = "定位：个人知识工作流搭建教程，写给想把零散资料变成可检索、可复用知识的人。"
+        topic_lock = (
+            "主题锁定：全文必须同时围绕 Codex、Obsidian 和个人知识库展开，"
+            "搜索素材只作论据；不要改写成泛泛的 AI 工具介绍或 Codex 入门文章。"
+        )
+        structure = plan.structure
     elif intent.task_kind == "tool_integration":
         positioning = "定位：工具接入教程，写给正在尝试把 AI 模型接入实际工作流的人。"
         topic_lock = "主题锁定：全文必须围绕工具接入、配置步骤和结果验证展开，不要改写成泛泛的 AI 学习、副业赚钱或人生建议。"
@@ -121,6 +128,14 @@ def apply_cover_style(base_style: str, cover_style: str = "business-tech") -> st
     selected = (cover_style or "business-tech").strip()
     if selected not in COVER_STYLE_GUIDANCE:
         raise ValueError(f"unsupported cover style: {cover_style}")
+    if "personal knowledge system" in base_style:
+        style_note = {
+            "business-tech": "refined editorial visualization of connected knowledge, crisp depth, high-resolution",
+            "real-photo": "tactile mixed-media knowledge map with believable linked notes, no generic workplace setup",
+            "minimal-illustration": "minimal editorial illustration of linked notes and organized knowledge clusters",
+            "knowledge-card": "knowledge-sharing composition with a clear linked-note graph, no text",
+        }[selected]
+        return f"{base_style}, {style_note}"
     if "open-source agent system" in base_style:
         style_note = {
             "business-tech": "technical product visualization, crisp interface-like lighting, high-resolution",
@@ -136,6 +151,11 @@ def _cover_style_for(topic: TopicBrief, channel: str) -> str:
     title = f"{topic.title} {topic.optimized_title} {topic.angle}"
     ratio = "3:4 vertical social cover" if channel == "xiaohongshu" else "16:9 wide cover"
 
+    if _contains_any(title, ["Obsidian", "个人知识库", "第二大脑", "双向链接", "知识工作流"]):
+        return (
+            f"personal knowledge system, linked-note knowledge graph, linked markdown notes, "
+            f"organized knowledge clusters, high-resolution editorial cover, {ratio}"
+        )
     if _contains_any(title, ["GitHub 开源项目", "开源项目", "Agent", "智能体", "数字员工", "工作系统"]):
         return (
             f"open-source agent system, abstract workflow nodes, automation timeline, "

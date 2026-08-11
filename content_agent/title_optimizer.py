@@ -31,6 +31,7 @@ def optimize_title(title: str, channel: ContentChannel, keyword: str = "") -> st
 def build_title_candidates(title: str, channel: ContentChannel, keyword: str = "") -> list[dict[str, float | str]]:
     clean_title = clean_source_title(title)
     brief = build_creative_brief(keyword, channel=channel)
+    plan = build_content_plan_for_text(clean_title, prompt=keyword)
     legacy = _sanitize_title(_legacy_optimize_title(title, channel, keyword=keyword))
     raw_candidates = _candidate_titles(clean_title, channel, keyword, brief)
     scored = [
@@ -38,7 +39,7 @@ def build_title_candidates(title: str, channel: ContentChannel, keyword: str = "
         for candidate in raw_candidates
         if candidate.strip()
     ]
-    if not is_creative_prompt(keyword):
+    if not is_creative_prompt(keyword) and plan.content_type not in {"github_project_share", "knowledge_workflow"}:
         scored.insert(0, {"title": legacy, "score": 999.0, "reason": "兼容短关键词默认标题"})
     unique: dict[str, dict[str, float | str]] = {}
     for item in scored:
@@ -68,7 +69,7 @@ def _legacy_optimize_title(title: str, channel: ContentChannel, keyword: str = "
 def _candidate_titles(title: str, channel: ContentChannel, keyword: str, brief: CreativeBrief) -> list[str]:
     legacy = _legacy_optimize_title(title, channel, keyword=keyword)
     plan = build_content_plan_for_text(title, prompt=keyword)
-    if plan.content_type == "github_project_share" and plan.title_angles:
+    if plan.content_type in {"github_project_share", "knowledge_workflow"} and plan.title_angles:
         return _dedupe(plan.title_angles)
     if _looks_like_github_project(title, keyword):
         return _dedupe(_github_project_title_candidates(title))
@@ -319,7 +320,7 @@ def _looks_like_side_hustle(text: str) -> bool:
 
 def _title_terms(topic: str) -> list[str]:
     terms = [part for part in re.split(r"[\s/+-]+", topic) if len(part) >= 2]
-    for term in ["AI", "副业", "接单", "第一单", "视频", "养生", "MiniMax", "DeepSeek", "Codex"]:
+    for term in ["AI", "副业", "接单", "第一单", "视频", "养生", "MiniMax", "DeepSeek", "Codex", "Obsidian", "知识库"]:
         if term in topic:
             terms.append(term)
     if not terms and len(topic) > 2:
