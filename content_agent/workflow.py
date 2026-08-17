@@ -51,8 +51,20 @@ def _brief_for(candidate: CandidateContent, keyword: str, primary_channel: Conte
     score = score_candidate(candidate)
     intent = parse_keyword_intent(keyword)
     is_health = _is_health_topic(candidate.title, primary_channel)
-    optimized_title = optimize_title(candidate.title, primary_channel, keyword=keyword)
-    title_candidates = build_title_candidates(candidate.title, primary_channel, keyword=keyword)
+    optimized_title = optimize_title(
+        candidate.title,
+        primary_channel,
+        keyword=keyword,
+        source_summary=candidate.summary,
+        url=candidate.url,
+    )
+    title_candidates = build_title_candidates(
+        candidate.title,
+        primary_channel,
+        keyword=keyword,
+        source_summary=candidate.summary,
+        url=candidate.url,
+    )
     platform_fit: list[ContentChannel] = ["xiaohongshu"] if is_health else ["wechat"]
     if not is_health and score.total >= 75:
         platform_fit.append("xiaohongshu")

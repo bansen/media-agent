@@ -34,26 +34,44 @@ def build_content_plan_for_text(title: str, prompt: str = "", source_summary: st
     text = f"{title} {source_summary} {prompt}"
     if _is_github_project(text, url):
         project_name = _github_project_name(text, url) or "这个开源项目"
+        project_label = _github_project_label(project_name)
         agent_focus = (
             "Agent"
-            if re.search(r"\bagent\b|loopx|智能体|Codex|Claude|工作流|数字员工", text, flags=re.IGNORECASE)
+            if re.search(r"\bagent\b|harness|loopx|智能体|Codex|Claude|工作流|数字员工", text, flags=re.IGNORECASE)
             else "开源项目"
         )
+        if agent_focus == "Agent" and _is_plugin_architecture(text):
+            title_angles = [
+                f"{project_label} 开源：一个“一切皆插件”的 Agent 框架",
+                f"Agent 框架还能这样搭？{project_label} 选择“一切皆插件”",
+                f"{project_label} 值得看吗？关键在可插拔 Agent 架构",
+                f"{project_label} 有什么不同？先看它的插件化 Agent 架构",
+            ]
+        elif agent_focus == "Agent":
+            title_angles = [
+                f"{project_label} 是什么？先看懂这个开源 Agent 框架",
+                f"Agent 总是跑偏？{project_label} 给出了一套工作系统",
+                f"别只会写 Prompt，{project_label} 想补上 Agent 工作流",
+                f"让 Agent 连续工作，{project_label} 的思路值得看",
+                f"{project_label} 值得关注吗？先看定位与使用边界",
+            ]
+        else:
+            title_angles = [
+                f"{project_label} 是什么？先看它解决了哪个真实问题",
+                f"{project_label} 值得关注吗？先看定位与使用边界",
+                f"别只看 Star，{project_label} 真正值得看的是这里",
+                f"准备试 {project_label}？先判断它适不适合你",
+            ]
         return ContentPlan(
             content_type="github_project_share",
             project_name=project_name,
             reader_hook=f"{agent_focus} 总是跑偏、断上下文、做不成长任务",
             article_promise="帮读者看懂这个项目解决的真实问题、适合谁用，以及值不值得收藏。",
-            title_angles=[
-                f"{agent_focus} 总是跑偏？这个开源项目给了一套工作系统",
-                f"别只会写 Prompt，{agent_focus} 真正缺的是这套工作流",
-                f"让 {agent_focus} 连续工作，这个开源项目的思路值得看",
-                f"做 {agent_focus} 的人，应该看看这个开源项目",
-                f"{agent_focus} 走向数字员工，差的可能不是模型",
-            ],
+            title_angles=title_angles,
             title_rules=[
                 "标题用痛点、反差或结果钩子，不把 URL、github.com、仓库路径写进标题。",
                 "标题不要写成“分享某链接”“介绍某仓库”，要让读者先关心问题本身。",
+                "标题必须使用可读项目名，不能用“这个开源项目”代替项目身份。",
                 "标题可以出现 Agent、Prompt、工作流、数字员工等读者熟悉的概念。",
             ],
             opening_rule="开头先写读者已经遇到的 Agent 失控场景，不要从链接、仓库名或“今天分享”开场。",
@@ -261,6 +279,10 @@ def _is_knowledge_workflow(text: str) -> bool:
     return has_knowledge_outcome and has_workflow_tool
 
 
+def _is_plugin_architecture(text: str) -> bool:
+    return any(term in text.lower() for term in ["一切皆插件", "插件架构", "插件化", "可插拔", "plugin architecture", "plugin-based"])
+
+
 def _github_project_name(text: str, url: str | None) -> str:
     source = f"{url or ''} {text}"
     match = re.search(r"github\.com/([^/\s]+)/([^/\s?#]+)", source, flags=re.IGNORECASE)
@@ -268,3 +290,18 @@ def _github_project_name(text: str, url: str | None) -> str:
         return f"{match.group(1)}/{match.group(2).removesuffix('.git')}"
     match = re.search(r"GitHub 开源项目[:：]\s*([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)", text)
     return match.group(1) if match else ""
+
+
+def _github_project_label(project_name: str) -> str:
+    repository = project_name.rsplit("/", 1)[-1].removesuffix(".git")
+    known_terms = {
+        "ai": "AI",
+        "codex": "Codex",
+        "deepseek": "DeepSeek",
+        "harness": "Harness",
+        "llm": "LLM",
+        "loopx": "LoopX",
+        "mcp": "MCP",
+    }
+    words = [word for word in re.split(r"[-_]+", repository) if word]
+    return " ".join(known_terms.get(word.lower(), word if any(char.isupper() for char in word) else word.capitalize()) for word in words)

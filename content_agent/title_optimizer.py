@@ -21,19 +21,31 @@ FORBIDDEN_TITLE_TERMS = [
 ]
 
 
-def optimize_title(title: str, channel: ContentChannel, keyword: str = "") -> str:
-    candidates = build_title_candidates(title, channel, keyword=keyword)
+def optimize_title(
+    title: str,
+    channel: ContentChannel,
+    keyword: str = "",
+    source_summary: str = "",
+    url: str | None = None,
+) -> str:
+    candidates = build_title_candidates(title, channel, keyword=keyword, source_summary=source_summary, url=url)
     if candidates:
         return str(candidates[0]["title"])
     return _sanitize_title(_legacy_optimize_title(title, channel, keyword=keyword))
 
 
-def build_title_candidates(title: str, channel: ContentChannel, keyword: str = "") -> list[dict[str, float | str]]:
+def build_title_candidates(
+    title: str,
+    channel: ContentChannel,
+    keyword: str = "",
+    source_summary: str = "",
+    url: str | None = None,
+) -> list[dict[str, float | str]]:
     clean_title = clean_source_title(title)
     brief = build_creative_brief(keyword, channel=channel)
-    plan = build_content_plan_for_text(clean_title, prompt=keyword)
+    plan = build_content_plan_for_text(clean_title, prompt=keyword, source_summary=source_summary, url=url)
     legacy = _sanitize_title(_legacy_optimize_title(title, channel, keyword=keyword))
-    raw_candidates = _candidate_titles(clean_title, channel, keyword, brief)
+    raw_candidates = _candidate_titles(clean_title, channel, keyword, brief, source_summary=source_summary, url=url)
     scored = [
         {"title": _sanitize_title(candidate), "score": _score_title(candidate, clean_title, brief, channel), "reason": _title_reason(candidate, brief)}
         for candidate in raw_candidates
@@ -66,9 +78,16 @@ def _legacy_optimize_title(title: str, channel: ContentChannel, keyword: str = "
     return _sanitize_title(_optimize_ai_side_hustle_title(clean_title))
 
 
-def _candidate_titles(title: str, channel: ContentChannel, keyword: str, brief: CreativeBrief) -> list[str]:
+def _candidate_titles(
+    title: str,
+    channel: ContentChannel,
+    keyword: str,
+    brief: CreativeBrief,
+    source_summary: str = "",
+    url: str | None = None,
+) -> list[str]:
     legacy = _legacy_optimize_title(title, channel, keyword=keyword)
-    plan = build_content_plan_for_text(title, prompt=keyword)
+    plan = build_content_plan_for_text(title, prompt=keyword, source_summary=source_summary, url=url)
     if plan.content_type in {"github_project_share", "knowledge_workflow"} and plan.title_angles:
         return _dedupe(plan.title_angles)
     if _looks_like_github_project(title, keyword):

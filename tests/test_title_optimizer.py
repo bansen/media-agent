@@ -199,11 +199,42 @@ class TitleOptimizerTests(unittest.TestCase):
         )
         optimized_title = result.topics[0].optimized_title
 
+        self.assertIn("LoopX", optimized_title)
         self.assertIn("Agent", optimized_title)
-        self.assertTrue(any(term in optimized_title for term in ["开源项目", "连续工作", "数字员工", "工作系统"]))
         self.assertNotIn("http", optimized_title)
         self.assertNotIn("github.com", optimized_title)
         self.assertNotIn("huangruiteng/loopx", optimized_title)
+
+    def test_github_harness_title_names_project_without_repeating_generic_label(self):
+        result = run_keyword_workflow(
+            "https://github.com/deepseek-ai/deepseek-harness/blob/master/README.zh.md 推荐一下 deepseek harness",
+            candidates=[
+                CandidateContent(
+                    title="GitHub 开源项目：deepseek-ai/deepseek-harness - 项目资料",
+                    source="websearch_mcp",
+                    url="https://github.com/deepseek-ai/deepseek-harness/blob/master/README.zh.md",
+                    heat=92,
+                    interaction=88,
+                    hook=84,
+                    pain=80,
+                    reuse=92,
+                    material=96,
+                    summary=(
+                        "DeepSeek Harness 是由 DeepSeek 开发的开源 Agent Harness，"
+                        "采用一切皆插件的架构，目前处于开发者预览阶段。"
+                    ),
+                )
+            ],
+            primary_channel="wechat",
+        )
+
+        optimized_title = result.topics[0].optimized_title
+        self.assertIn("DeepSeek Harness", optimized_title)
+        self.assertIn("Agent", optimized_title)
+        self.assertIn("插件", optimized_title)
+        self.assertLessEqual(optimized_title.count("开源项目"), 1)
+        self.assertNotIn("http", optimized_title)
+        self.assertNotIn("github.com", optimized_title)
 
 
 if __name__ == "__main__":
