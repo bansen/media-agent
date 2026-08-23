@@ -142,6 +142,39 @@ class WorkflowExportTests(unittest.TestCase):
         self.assertNotIn("分享 的文章", result.cover_prompt)
         self.assertNotIn("github.com", result.cover_prompt)
 
+    def test_wechat_cover_prompt_adapts_to_github_video_creator_tool(self):
+        result = run_keyword_workflow(
+            "https://github.com/harry0703/MoneyPrinterTurbo/blob/main/README.md 项目分享",
+            candidates=[
+                CandidateContent(
+                    title="GitHub 开源项目：harry0703/MoneyPrinterTurbo - MoneyPrinterTurbo",
+                    source="websearch_mcp",
+                    url="https://github.com/harry0703/MoneyPrinterTurbo/blob/main/README.md",
+                    heat=92,
+                    interaction=88,
+                    hook=84,
+                    pain=80,
+                    reuse=92,
+                    material=96,
+                    summary=(
+                        "MoneyPrinterTurbo 是一站式 AI 短视频生成工具。输入主题或关键词，"
+                        "自动生成视频脚本、匹配素材、生成字幕和背景音乐，并合成高清短视频。"
+                    ),
+                )
+            ],
+            primary_channel="wechat",
+        )
+
+        prompt = result.cover_prompt.lower()
+        positive_prompt, negative_prompt = prompt.split("avoid:", 1)
+        self.assertIn("short-video production pipeline", positive_prompt)
+        self.assertIn("storyboard", positive_prompt)
+        self.assertIn("subtitle", positive_prompt)
+        self.assertNotIn("open-source agent system", positive_prompt)
+        self.assertNotIn("circuit board", positive_prompt)
+        self.assertIn("open-source agent system", negative_prompt)
+        self.assertIn("circuit board", negative_prompt)
+
     def test_wechat_outline_keeps_keyword_and_selected_material_context(self):
         candidates = [
             CandidateContent(

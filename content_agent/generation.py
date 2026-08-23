@@ -4,7 +4,7 @@ from collections.abc import Callable
 import re
 from typing import Protocol
 
-from .content_planner import build_content_plan
+from .content_planner import ContentPlan, build_content_plan
 from .models import WorkflowResult
 from .skill_loader import load_content_skill
 
@@ -20,6 +20,7 @@ def generate_llm_drafts(
     progress: Callable[[str], None] | None = None,
 ) -> dict[str, str]:
     topic = result.topics[0]
+    plan = build_content_plan(topic, result.keyword)
     channel = _result_channel(result)
     prompts = {}
     if channel == "xiaohongshu":
@@ -32,11 +33,42 @@ def generate_llm_drafts(
             progress(f"Generating {name} with LLM")
         generated = llm.generate(prompt)
         if name == "wechat_article":
+            issues = _wechat_alignment_issues(generated, plan)
+            if issues:
+                if progress:
+                    progress("Rewriting off-topic WeChat draft")
+                correction_prompt = "\n\n".join(
+                    [
+                        prompt,
+                        "上一次正文偏离项目主题，必须整篇重写，不能只补一段。",
+                        "偏题原因：" + "；".join(issues),
+                        "重写要求：严格按照内容运营蓝图逐节展开，只输出完整 Markdown 正文。",
+                    ]
+                )
+                generated = llm.generate(correction_prompt)
+                remaining_issues = _wechat_alignment_issues(generated, plan)
+                if remaining_issues:
+                    raise RuntimeError("公众号正文主题校验失败：" + "；".join(remaining_issues))
             generated = _force_markdown_title(generated, topic.optimized_title)
         drafts[name] = generated
     drafts["selected_topic"] = topic.optimized_title
     drafts["source_topic"] = topic.title
     return drafts
+
+
+def _wechat_alignment_issues(markdown: str, plan: ContentPlan) -> list[str]:
+    if plan.project_kind != "creator_video_tool":
+        return []
+    video_terms = ["短视频", "视频脚本", "素材", "配音", "字幕", "背景音乐", "成片", "横竖屏", "批量"]
+    agent_drift_terms = ["Agent 跑偏", "遗忘上下文", "长期记忆", "上下文管理", "任务控制"]
+    video_hits = sum(term in markdown for term in video_terms)
+    drift_hits = sum(term in markdown for term in agent_drift_terms)
+    issues = []
+    if video_hits < 3:
+        issues.append("没有覆盖从视频脚本、素材、配音字幕到高清成片的短视频链路")
+    if drift_hits >= 2:
+        issues.append("错误写成了 Agent 记忆或上下文管理文章")
+    return issues
 
 
 def _result_channel(result: WorkflowResult) -> str:
@@ -54,7 +86,14 @@ def _wechat_prompt(result: WorkflowResult) -> str:
         opening_rule.append("开头必须直接进入工具接入场景，第一段说明要接入什么、验证什么、读者能得到什么。")
         opening_rule.append("不要写“学 AI 做作品”、副业、面试、HR、读者投稿等泛用故事。")
     if plan.content_type == "github_project_share":
-        opening_rule.append("开头必须先写 Agent 使用痛点，不要用“今天分享一个 GitHub 链接/项目”开场。")
+        if plan.project_kind == "creator_video_tool":
+            opening_rule.append("开头必须写短视频创作者在脚本、素材、配音、字幕和剪辑之间切换的真实痛点。")
+            opening_rule.append("正文必须完整解释视频脚本、匹配素材、配音字幕、背景音乐到高清成片的链路。")
+            opening_rule.append("不要改写成 Agent 跑偏、记忆或上下文管理，也不要虚构无人值守收益。")
+        elif plan.project_kind == "agent_framework":
+            opening_rule.append("开头必须先写 Agent 使用痛点，不要用“今天分享一个 GitHub 链接/项目”开场。")
+        else:
+            opening_rule.append("开头必须从 README 对应的真实使用场景切入，不要套用 Agent 或副业故事。")
         opening_rule.append("正文可以提项目名，但不要在正文中反复展示 URL；项目地址只放在文末一次。")
     if plan.content_type == "knowledge_workflow":
         opening_rule.append("正文主线必须依次覆盖资料进入、Codex 整理、Obsidian 链接沉淀和检索复用。")

@@ -26,8 +26,18 @@ def build_wechat_outline(topic: TopicBrief, keyword: str = "") -> str:
         brief_lines = []
         if topic.url:
             brief_lines.append(f"项目地址：{topic.url}")
-        positioning = "定位：GitHub 开源项目分享，写给关注 AI Agent、自动化工作流和开发效率的读者。"
-        topic_lock = "主题锁定：全文必须围绕项目解决的问题、项目思路和适用人群展开，链接只在文末作为项目地址出现，不要把链接写进标题。"
+        if plan.project_kind == "creator_video_tool":
+            positioning = "定位：GitHub 短视频创作工具实测解读，写给想缩短脚本、素材、配音、字幕和剪辑流程的内容创作者。"
+            topic_lock = (
+                "主题锁定：全文必须围绕从主题到高清成片的短视频自动化链路展开；"
+                "不要改写成 Agent 跑偏、记忆或上下文管理，也不要承诺无人值守赚钱。"
+            )
+        elif plan.project_kind == "agent_framework":
+            positioning = "定位：GitHub Agent 项目解读，写给关注智能体工作流和开发效率的读者。"
+            topic_lock = "主题锁定：全文必须围绕 Agent 项目解决的问题、关键机制和适用人群展开，不要把链接写进标题。"
+        else:
+            positioning = "定位：GitHub 开源项目解读，写给正在判断工具价值和使用成本的读者。"
+            topic_lock = "主题锁定：全文必须以 README 为事实依据，围绕项目定位、核心能力、使用成本和适用人群展开。"
         structure = plan.structure
     elif plan.content_type == "knowledge_workflow":
         positioning = "定位：个人知识工作流搭建教程，写给想把零散资料变成可检索、可复用知识的人。"
@@ -128,6 +138,14 @@ def apply_cover_style(base_style: str, cover_style: str = "business-tech") -> st
     selected = (cover_style or "business-tech").strip()
     if selected not in COVER_STYLE_GUIDANCE:
         raise ValueError(f"unsupported cover style: {cover_style}")
+    if "short-video production pipeline" in base_style:
+        style_note = {
+            "business-tech": "polished creator-tool editorial visualization, cinematic color, high-resolution",
+            "real-photo": "realistic creator studio workflow with visible storyboard and vertical video frames",
+            "minimal-illustration": "minimal editorial illustration of script-to-video production stages",
+            "knowledge-card": "clear educational composition showing the short-video creation pipeline, no text",
+        }[selected]
+        return f"{base_style}, {style_note}"
     if "personal knowledge system" in base_style:
         style_note = {
             "business-tech": "refined editorial visualization of connected knowledge, crisp depth, high-resolution",
@@ -148,13 +166,18 @@ def apply_cover_style(base_style: str, cover_style: str = "business-tech") -> st
 
 
 def _cover_style_for(topic: TopicBrief, channel: str) -> str:
-    title = f"{topic.title} {topic.optimized_title} {topic.angle}"
+    title = f"{topic.title} {topic.optimized_title} {topic.angle} {topic.source_summary}"
     ratio = "3:4 vertical social cover" if channel == "xiaohongshu" else "16:9 wide cover"
 
     if _contains_any(title, ["Obsidian", "个人知识库", "第二大脑", "双向链接", "知识工作流"]):
         return (
             f"personal knowledge system, linked-note knowledge graph, linked markdown notes, "
             f"organized knowledge clusters, high-resolution editorial cover, {ratio}"
+        )
+    if _contains_any(title, ["短视频", "视频脚本", "视频生成", "字幕", "背景音乐", "MoneyPrinterTurbo"]):
+        return (
+            f"short-video production pipeline, storyboard, script page, media clips, voice waveform, "
+            f"subtitle timeline, finished vertical video frames, high-resolution editorial cover, {ratio}"
         )
     if _contains_any(title, ["GitHub 开源项目", "开源项目", "Agent", "智能体", "数字员工", "工作系统"]):
         return (

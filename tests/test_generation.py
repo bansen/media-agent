@@ -16,6 +16,16 @@ class FakeLLMProvider:
         return self.response
 
 
+class SequenceLLMProvider:
+    def __init__(self, responses: list[str]):
+        self.prompts = []
+        self.responses = iter(responses)
+
+    def generate(self, prompt: str) -> str:
+        self.prompts.append(prompt)
+        return next(self.responses)
+
+
 class GenerationTests(unittest.TestCase):
     def minimax_candidates(self):
         return [
@@ -159,20 +169,88 @@ class GenerationTests(unittest.TestCase):
 
         generate_llm_drafts(result, llm)
 
-        self.assertIn("GitHub 开源项目分享", llm.prompts[0])
-        self.assertIn("项目一句话定位", llm.prompts[0])
-        self.assertIn("适合谁用", llm.prompts[0])
+        self.assertIn("GitHub Agent 项目解读", llm.prompts[0])
+        self.assertIn("项目定位", llm.prompts[0])
+        self.assertIn("适用判断", llm.prompts[0])
         self.assertIn("项目地址", llm.prompts[0])
         self.assertIn("内容运营蓝图", llm.prompts[0])
         self.assertIn("标题用痛点、反差或结果钩子", llm.prompts[0])
         self.assertIn("每个小节必须提供一个新判断", llm.prompts[0])
         self.assertIn("不要连续两个小节重复同一观点", llm.prompts[0])
         self.assertIn("不要用“今天分享一个 GitHub 链接/项目”开场", llm.prompts[0])
-        self.assertIn("链接只在文末作为项目地址出现", llm.prompts[0])
+        self.assertIn("链接只在文末以“项目地址：...”出现一次", llm.prompts[0])
         self.assertIn("不要把链接写进标题", llm.prompts[0])
         self.assertIn("用户意图：分享 GitHub 开源项目", llm.prompts[0])
         self.assertNotIn("创作主题：分享 https", llm.prompts[0])
         self.assertNotIn("副业/AI学习方法拆解", llm.prompts[0])
+
+    def test_wechat_prompt_uses_creator_workflow_for_github_video_tool(self):
+        result = run_keyword_workflow(
+            "https://github.com/harry0703/MoneyPrinterTurbo/blob/main/README.md 项目分享",
+            [
+                CandidateContent(
+                    title="GitHub 开源项目：harry0703/MoneyPrinterTurbo - MoneyPrinterTurbo",
+                    source="websearch_mcp",
+                    url="https://github.com/harry0703/MoneyPrinterTurbo/blob/main/README.md",
+                    heat=92,
+                    interaction=88,
+                    hook=84,
+                    pain=80,
+                    reuse=92,
+                    material=96,
+                    summary=(
+                        "MoneyPrinterTurbo 是一站式 AI 短视频生成工具。输入主题或关键词，"
+                        "自动生成视频脚本、匹配素材、生成字幕和背景音乐，并合成高清短视频。"
+                    ),
+                )
+            ],
+        )
+        llm = FakeLLMProvider("# MoneyPrinterTurbo\n\n从视频脚本、匹配素材、配音字幕到高清短视频成片，逐项说明。")
+
+        generate_llm_drafts(result, llm)
+
+        prompt = llm.prompts[0]
+        self.assertIn("短视频创作工具", prompt)
+        self.assertIn("视频脚本", prompt)
+        self.assertIn("匹配素材", prompt)
+        self.assertIn("字幕", prompt)
+        self.assertIn("高清成片", prompt)
+        self.assertIn("不要改写成 Agent 跑偏、记忆或上下文管理", prompt)
+        self.assertNotIn("开头必须先写 Agent 使用痛点", prompt)
+        self.assertNotIn("先讲痛点，再讲项目定位、关键机制", prompt)
+
+    def test_wechat_video_tool_rewrites_once_when_first_draft_drifts_to_agent_memory(self):
+        result = run_keyword_workflow(
+            "https://github.com/harry0703/MoneyPrinterTurbo/blob/main/README.md 项目分享",
+            [
+                CandidateContent(
+                    title="GitHub 开源项目：harry0703/MoneyPrinterTurbo - MoneyPrinterTurbo",
+                    source="websearch_mcp",
+                    url="https://github.com/harry0703/MoneyPrinterTurbo/blob/main/README.md",
+                    heat=92,
+                    interaction=88,
+                    hook=84,
+                    pain=80,
+                    reuse=92,
+                    material=96,
+                    summary="一站式 AI 短视频生成工具，可生成视频脚本、匹配素材、字幕和背景音乐并合成成片。",
+                )
+            ],
+        )
+        llm = SequenceLLMProvider(
+            [
+                "# 错误正文\n\nAgent 经常跑偏、遗忘上下文，需要长期记忆和任务控制。",
+                "# 正确正文\n\n输入短视频主题后，依次生成视频脚本、匹配素材、配音字幕和背景音乐，最后合成高清成片。",
+            ]
+        )
+
+        drafts = generate_llm_drafts(result, llm)
+
+        self.assertEqual(len(llm.prompts), 2)
+        self.assertIn("上一次正文偏离项目主题", llm.prompts[1])
+        self.assertIn("Agent 记忆或上下文", llm.prompts[1])
+        self.assertIn("高清成片", drafts["wechat_article"])
+        self.assertNotIn("Agent 经常跑偏", drafts["wechat_article"])
 
     def test_wechat_article_title_is_forced_to_selected_topic(self):
         result = run_keyword_workflow(

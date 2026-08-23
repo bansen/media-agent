@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .content_planner import build_content_plan_for_text
 from .creative_brief import build_creative_brief, is_creative_prompt
 from .keyword_expander import expand_keywords
 from .keyword_intent import clean_search_keyword, parse_keyword_intent
@@ -76,7 +77,13 @@ def _brief_for(candidate: CandidateContent, keyword: str, primary_channel: Conte
         source=candidate.source,
         url=candidate.url,
         platform_fit=platform_fit,
-        angle=_angle_for(optimized_title, is_health, keyword),
+        angle=_angle_for(
+            optimized_title,
+            is_health,
+            keyword,
+            source_summary=candidate.summary,
+            url=candidate.url,
+        ),
         material_needs=_material_needs_for(is_health, intent.task_kind),
         risk_notes=_risk_notes_for(is_health),
         source_summary=candidate.summary,
@@ -96,9 +103,20 @@ def _dedupe_topics_by_optimized_title(topics: list[TopicBrief]) -> list[TopicBri
     return unique
 
 
-def _angle_for(title: str, is_health: bool, keyword: str = "") -> str:
+def _angle_for(
+    title: str,
+    is_health: bool,
+    keyword: str = "",
+    source_summary: str = "",
+    url: str | None = None,
+) -> str:
     if is_health:
         return f"把《{title}》改成职场女性和宝妈都能立刻收藏的生活习惯清单。"
+    plan = build_content_plan_for_text(title, prompt=keyword, source_summary=source_summary, url=url)
+    if plan.project_kind == "creator_video_tool":
+        return f"把《{title}》写成短视频创作工具解读，围绕从主题、脚本、素材、配音字幕到高清成片的链路和使用边界展开。"
+    if plan.project_kind == "agent_framework":
+        return f"把《{title}》写成 Agent 项目解读，围绕真实痛点、项目定位、关键机制、适用人群和项目地址展开。"
     if _is_github_project_topic(title, keyword):
         return f"把《{title}》写成开源项目解读：先讲痛点，再讲项目定位、关键机制、适用人群和项目地址。"
     intent = parse_keyword_intent(keyword)

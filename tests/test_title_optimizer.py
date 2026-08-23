@@ -236,6 +236,37 @@ class TitleOptimizerTests(unittest.TestCase):
         self.assertNotIn("http", optimized_title)
         self.assertNotIn("github.com", optimized_title)
 
+    def test_github_video_creator_title_uses_project_outcome_not_agent_template(self):
+        result = run_keyword_workflow(
+            "https://github.com/harry0703/MoneyPrinterTurbo/blob/main/README.md 项目分享",
+            candidates=[
+                CandidateContent(
+                    title="GitHub 开源项目：harry0703/MoneyPrinterTurbo - MoneyPrinterTurbo",
+                    source="websearch_mcp",
+                    url="https://github.com/harry0703/MoneyPrinterTurbo/blob/main/README.md",
+                    heat=92,
+                    interaction=88,
+                    hook=84,
+                    pain=80,
+                    reuse=92,
+                    material=96,
+                    summary=(
+                        "MoneyPrinterTurbo 是一站式 AI 短视频生成工具。输入主题或关键词，"
+                        "自动生成视频脚本、匹配素材、生成字幕和背景音乐，并合成高清短视频。"
+                    ),
+                )
+            ],
+            primary_channel="wechat",
+        )
+
+        optimized_title = result.topics[0].optimized_title
+        self.assertIn("MoneyPrinterTurbo", optimized_title)
+        self.assertIn("短视频", optimized_title)
+        self.assertIn("不会剪视频", optimized_title)
+        self.assertNotIn("项目分享", optimized_title)
+        self.assertNotIn("Agent", optimized_title)
+        self.assertNotIn("真实问题", optimized_title)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -33,6 +33,11 @@ class WebSearchMCPTests(unittest.TestCase):
 
         self.assertEqual(urls, ["https://github.com/bansen/media-agent/tree/main"])
 
+    def test_extracts_github_url_without_swallowing_chinese_instruction(self):
+        urls = extract_prompt_urls("https://github.com/harry0703/MoneyPrinterTurbo项目分享")
+
+        self.assertEqual(urls, ["https://github.com/harry0703/MoneyPrinterTurbo"])
+
     def test_mcp_extract_maps_github_link_to_candidate(self):
         runner = FakeMCPRunner(
             {

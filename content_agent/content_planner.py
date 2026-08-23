@@ -10,6 +10,7 @@ from .models import TopicBrief
 class ContentPlan:
     content_type: str
     project_name: str = ""
+    project_kind: str = ""
     reader_hook: str = ""
     article_promise: str = ""
     title_angles: list[str] = field(default_factory=list)
@@ -33,69 +34,7 @@ def build_content_plan(topic: TopicBrief, prompt: str = "") -> ContentPlan:
 def build_content_plan_for_text(title: str, prompt: str = "", source_summary: str = "", url: str | None = None) -> ContentPlan:
     text = f"{title} {source_summary} {prompt}"
     if _is_github_project(text, url):
-        project_name = _github_project_name(text, url) or "这个开源项目"
-        project_label = _github_project_label(project_name)
-        agent_focus = (
-            "Agent"
-            if re.search(r"\bagent\b|harness|loopx|智能体|Codex|Claude|工作流|数字员工", text, flags=re.IGNORECASE)
-            else "开源项目"
-        )
-        if agent_focus == "Agent" and _is_plugin_architecture(text):
-            title_angles = [
-                f"{project_label} 开源：一个“一切皆插件”的 Agent 框架",
-                f"Agent 框架还能这样搭？{project_label} 选择“一切皆插件”",
-                f"{project_label} 值得看吗？关键在可插拔 Agent 架构",
-                f"{project_label} 有什么不同？先看它的插件化 Agent 架构",
-            ]
-        elif agent_focus == "Agent":
-            title_angles = [
-                f"{project_label} 是什么？先看懂这个开源 Agent 框架",
-                f"Agent 总是跑偏？{project_label} 给出了一套工作系统",
-                f"别只会写 Prompt，{project_label} 想补上 Agent 工作流",
-                f"让 Agent 连续工作，{project_label} 的思路值得看",
-                f"{project_label} 值得关注吗？先看定位与使用边界",
-            ]
-        else:
-            title_angles = [
-                f"{project_label} 是什么？先看它解决了哪个真实问题",
-                f"{project_label} 值得关注吗？先看定位与使用边界",
-                f"别只看 Star，{project_label} 真正值得看的是这里",
-                f"准备试 {project_label}？先判断它适不适合你",
-            ]
-        return ContentPlan(
-            content_type="github_project_share",
-            project_name=project_name,
-            reader_hook=f"{agent_focus} 总是跑偏、断上下文、做不成长任务",
-            article_promise="帮读者看懂这个项目解决的真实问题、适合谁用，以及值不值得收藏。",
-            title_angles=title_angles,
-            title_rules=[
-                "标题用痛点、反差或结果钩子，不把 URL、github.com、仓库路径写进标题。",
-                "标题不要写成“分享某链接”“介绍某仓库”，要让读者先关心问题本身。",
-                "标题必须使用可读项目名，不能用“这个开源项目”代替项目身份。",
-                "标题可以出现 Agent、Prompt、工作流、数字员工等读者熟悉的概念。",
-            ],
-            opening_rule="开头先写读者已经遇到的 Agent 失控场景，不要从链接、仓库名或“今天分享”开场。",
-            section_flow=[
-                "痛点开场：Agent 为什么会跑偏、断上下文、做不成长任务。",
-                "项目定位：用一句话讲清这个项目补的是哪一层能力。",
-                "关键问题 1：它如何让任务目标、上下文或执行过程更稳定。",
-                "关键问题 2：它如何把一次性对话变成可持续工作流。",
-                "关键问题 3：它适合哪些人试用，哪些人暂时不用急。",
-                "上手判断：先看 README、示例和适配场景，再决定是否收藏或试用。",
-                "项目地址：只在文末出现一次，作为补充资料。",
-            ],
-            evidence_rule="优先引用 WebSearch MCP 读取到的 README/项目摘要，不臆造 star、融资、作者背景或未给出的功能。",
-            link_policy="链接只在文末以“项目地址：...”出现一次，正文中不要反复展示 URL。",
-            ending_rule="结尾给判断建议，引导读者关注“这个项目解决的问题是否正好是自己工作流里的问题”。",
-            repetition_rule="每个小节必须提供一个新判断，禁止连续两节重复“它能提升效率/值得关注”这类空话。",
-            structure="结构：痛点开场 -> 项目一句话定位 -> 它解决的 3 个关键问题 -> 适合谁用 -> 怎么开始看 -> 项目地址与判断建议。",
-            cover_scene=(
-                "open-source agent system, abstract workflow nodes, automation timeline, "
-                "connected task graph, clean technical interface, abstract product visualization"
-            ),
-            cover_subject="由任务节点、上下文记忆、自动化时间线组成的 Agent 工作系统，而不是办公桌或普通电脑照片",
-            cover_negative="generic workspace photography, computer hero shot, raw URL text, GitHub page screenshot, white card, poster board",
-        )
+        return _build_github_project_plan(text, url)
     if _is_knowledge_workflow(text):
         return ContentPlan(
             content_type="knowledge_workflow",
@@ -283,9 +222,124 @@ def _is_plugin_architecture(text: str) -> bool:
     return any(term in text.lower() for term in ["一切皆插件", "插件架构", "插件化", "可插拔", "plugin architecture", "plugin-based"])
 
 
+def _is_video_creator_tool(text: str) -> bool:
+    terms = ["短视频", "视频脚本", "视频生成", "生成字幕", "背景音乐", "文生视频", "video generator", "short video"]
+    return sum(term in text.lower() for term in terms) >= 2
+
+
+def _build_github_project_plan(text: str, url: str | None) -> ContentPlan:
+    project_name = _github_project_name(text, url) or "这个开源项目"
+    project_label = _github_project_label(project_name)
+    common = {
+        "content_type": "github_project_share",
+        "project_name": project_name,
+        "evidence_rule": "优先引用 WebSearch MCP 读取到的 README/项目摘要，不臆造 star、融资、作者背景或未给出的功能。",
+        "link_policy": "链接只在文末以“项目地址：...”出现一次，正文中不要反复展示 URL。",
+        "repetition_rule": "每个小节必须提供一个新判断，禁止连续两节重复“它能提升效率/值得关注”这类空话。",
+    }
+    if _is_video_creator_tool(text):
+        return ContentPlan(
+            **common,
+            project_kind="creator_video_tool",
+            reader_hook="做一条短视频要反复处理脚本、素材、配音、字幕、音乐和剪辑，流程长且容易卡住",
+            article_promise="看懂 MoneyPrinterTurbo 如何把一个主题变成短视频、适合哪些创作者，以及自动化不能替代哪些判断。",
+            title_angles=[
+                f"不会剪视频？{project_label} 怎么把主题变成短视频",
+                f"从脚本到成片，{project_label} 把短视频流程串起来了",
+                f"做短视频太费时间？看看 {project_label} 能自动完成什么",
+                f"{project_label} 值得用吗？先看它的短视频自动化链路",
+            ],
+            title_rules=[
+                "标题必须同时保留可读项目名和短视频结果，不使用“项目分享”或“真实问题”等空泛描述。",
+                "标题不暴露 URL、github.com 或仓库路径，不虚构收益和无人值守效果。",
+            ],
+            opening_rule="开头从创作者制作短视频时在脚本、找素材、配音、字幕和剪辑之间反复切换的痛点切入。",
+            section_flow=[
+                "创作痛点：做一条短视频为什么会被多个零散环节拖慢。",
+                "项目定位：它是一站式 AI 短视频生成工具，不是 Agent 记忆或上下文管理框架。",
+                "工作链路：输入主题或关键词后，如何生成视频脚本、匹配素材、生成配音字幕和背景音乐并合成高清成片。",
+                "能力边界：横竖屏、批量、多语言、自有或在线素材以及可选平台发布分别解决什么问题。",
+                "使用方式：WebUI、API、CLI 和 AI Agent 入口分别适合谁。",
+                "成本与风险：部署环境、模型或素材服务、版权、成片质量和发布前人工审核。",
+                "适用判断：哪些内容创作者值得试，哪些专业剪辑需求不应期待一键完成。",
+                "项目地址：只在文末出现一次。",
+            ],
+            ending_rule="结尾建议读者用一个真实主题跑通样片，再根据成片质量和修改成本决定是否进入日常流程。",
+            structure="结构：短视频制作痛点 -> 项目定位 -> 从主题到成片的完整链路 -> 关键能力 -> 使用方式 -> 成本与边界 -> 适用人群 -> 项目地址。",
+            cover_scene="short-video production pipeline, storyboard, script page, media clips, voice waveform, subtitle timeline, vertical video frames",
+            cover_subject="a visual journey from one topic through script, footage, voiceover and subtitles into a finished vertical short video",
+            cover_negative="open-source agent system, circuit board, cryptocurrency symbols, generic AI network, raw URL text, unreadable interface text",
+        )
+
+    is_agent_project = bool(re.search(r"\bagent\b|harness|loopx|智能体|Codex|Claude|工作流|数字员工", text, flags=re.IGNORECASE))
+    if is_agent_project and _is_plugin_architecture(text):
+        title_angles = [
+            f"{project_label} 开源：一个“一切皆插件”的 Agent 框架",
+            f"Agent 框架还能这样搭？{project_label} 选择“一切皆插件”",
+            f"{project_label} 值得看吗？关键在可插拔 Agent 架构",
+            f"{project_label} 有什么不同？先看它的插件化 Agent 架构",
+        ]
+    elif is_agent_project:
+        title_angles = [
+            f"{project_label} 是什么？先看懂这个开源 Agent 框架",
+            f"Agent 总是跑偏？{project_label} 给出了一套工作系统",
+            f"别只会写 Prompt，{project_label} 想补上 Agent 工作流",
+            f"让 Agent 连续工作，{project_label} 的思路值得看",
+            f"{project_label} 值得关注吗？先看定位与使用边界",
+        ]
+    else:
+        title_angles = [
+            f"{project_label} 是什么？先看它解决了哪个真实问题",
+            f"{project_label} 值得关注吗？先看定位与使用边界",
+            f"别只看 Star，{project_label} 真正值得看的是这里",
+            f"准备试 {project_label}？先判断它适不适合你",
+        ]
+    if is_agent_project:
+        return ContentPlan(
+            **common,
+            project_kind="agent_framework",
+            reader_hook="Agent 总是跑偏、断上下文、做不成长任务",
+            article_promise="帮读者看懂这个项目如何改善 Agent 工作方式、适合谁用，以及值不值得收藏。",
+            title_angles=title_angles,
+            title_rules=[
+                "标题用痛点、反差或结果钩子，不把 URL、github.com、仓库路径写进标题。",
+                "标题必须使用可读项目名，不能用“这个开源项目”代替项目身份。",
+            ],
+            opening_rule="开头先写读者已经遇到的 Agent 失控场景，不要从链接、仓库名或“今天分享”开场。",
+            section_flow=[
+                "痛点开场：Agent 为什么会跑偏、断上下文、做不成长任务。",
+                "项目定位：用一句话讲清这个项目补的是哪一层能力。",
+                "关键机制：它如何让目标、上下文或执行过程更稳定。",
+                "工作流价值：它如何把一次性对话变成可持续工作流。",
+                "适用判断：谁该试，谁可以先观望。",
+                "项目地址：只在文末出现一次。",
+            ],
+            ending_rule="结尾给判断建议，帮助读者确认项目是否解决了自己的 Agent 工作流问题。",
+            structure="结构：Agent 痛点 -> 项目定位 -> 关键机制 -> 工作流价值 -> 适用判断 -> 项目地址。",
+            cover_scene="open-source agent system, abstract workflow nodes, automation timeline, connected task graph, clean technical interface",
+            cover_subject="由任务节点、上下文记忆和自动化时间线组成的 Agent 工作系统",
+            cover_negative="generic workspace photography, computer hero shot, raw URL text, GitHub page screenshot, white card, poster board",
+        )
+    return ContentPlan(
+        **common,
+        project_kind="general_project",
+        reader_hook="工具很多，但读者很难快速判断一个开源项目到底解决什么问题、是否值得投入时间",
+        article_promise="基于 README 讲清项目定位、核心能力、使用门槛和适用人群。",
+        title_angles=title_angles,
+        title_rules=["标题必须使用可读项目名和具体价值，不暴露 URL，不使用空泛的“项目分享”。"],
+        opening_rule="开头从项目对应的真实使用场景切入，不套用 Agent、副业或 AI 学习故事。",
+        section_flow=["真实场景", "项目定位", "核心能力", "使用方式", "成本与边界", "适用人群", "项目地址"],
+        ending_rule="结尾给出是否值得试用的判断标准。",
+        structure="结构：真实场景 -> 项目定位 -> 核心能力 -> 使用方式 -> 成本与边界 -> 适用人群 -> 项目地址。",
+        cover_scene="open-source product concept matching the README, clear functional workflow, editorial product visualization",
+        cover_subject="the project's primary user outcome rather than a generic computer or circuit network",
+        cover_negative="generic AI network, circuit board, raw URL text, GitHub screenshot, unreadable interface text",
+    )
+
+
 def _github_project_name(text: str, url: str | None) -> str:
     source = f"{url or ''} {text}"
-    match = re.search(r"github\.com/([^/\s]+)/([^/\s?#]+)", source, flags=re.IGNORECASE)
+    match = re.search(r"github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)", source, flags=re.IGNORECASE)
     if match:
         return f"{match.group(1)}/{match.group(2).removesuffix('.git')}"
     match = re.search(r"GitHub 开源项目[:：]\s*([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)", text)

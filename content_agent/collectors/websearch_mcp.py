@@ -212,7 +212,7 @@ def _websearch_title(title: str, url: str) -> str:
 
 
 def _github_repo_ref(url: str) -> str:
-    match = re.search(r"github\.com/([^/\s]+)/([^/\s?#]+)", url)
+    match = re.search(r"github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)", url, flags=re.IGNORECASE)
     if not match:
         return ""
     return f"{match.group(1)}/{match.group(2).removesuffix('.git')}"
@@ -232,7 +232,13 @@ def _summary_for(title: str, content: str) -> str:
 
 
 def _normalize_url(url: str) -> str:
-    return url.rstrip(".,;:!?，。；：！？")
+    clean = url.rstrip(".,;:!?，。；：！？")
+    github = re.match(
+        r"https?://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:/(?:blob|tree)/[A-Za-z0-9_.\-/]+)?",
+        clean,
+        flags=re.IGNORECASE,
+    )
+    return github.group(0).rstrip("/") if github else clean
 
 
 def _normalize_match(text: str) -> str:
