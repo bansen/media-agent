@@ -194,6 +194,11 @@ def _score_title(title: str, source_title: str, brief: CreativeBrief, channel: C
     score += 6 if any(char.isdigit() for char in title) else 0
     score += 6 if "？" in title or "?" in title else 0
     score += 4 if "同时" in title else 0
+    score += 6 if "来回切" in title else 0
+    score += 6 if "全收进" in title else 0
+    score += 6 if "多平台运营" in title else 0
+    score += 6 if "太分散" in title else 0
+    score += 6 if "收进一处" in title else 0
     score += min(8, sum(4 for term in ["抖音", "小红书", "快手", "视频号"] if term in title))
     score += 6 if any(term in title for term in ["后台", "一个面板", "成片", "第一单"]) else 0
     score += 4 if channel == "xiaohongshu" and any(term in title for term in ["收藏", "习惯", "清单"]) else 0
@@ -201,7 +206,9 @@ def _score_title(title: str, source_title: str, brief: CreativeBrief, channel: C
         score -= 8
     if any(term in title for term in ["我想写", "目标读者", "内容要", "要求", "风格", "http", "github.com"]):
         score -= 30
-    if any(term in title for term in ["是什么", "真实问题", "值得关注吗", "先看懂这 3 点"]):
+    if any(term in title for term in ["想用", "试试看", "可能"]):
+        score -= 8
+    if any(term in title for term in ["是什么", "真实问题", "值得关注吗", "准备试", "适不适合你", "先看懂这 3 点"]):
         score -= 18
     if _looks_like_github_project(source_title, brief.raw_prompt) and any(
         term in title for term in ["开源项目", "Agent", "数字员工", "工作系统", "连续工作"]

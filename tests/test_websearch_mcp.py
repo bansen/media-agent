@@ -69,6 +69,50 @@ class WebSearchMCPTests(unittest.TestCase):
         self.assertEqual(runner.calls[0][0], "tavily-extract")
         self.assertEqual(runner.calls[0][1]["urls"], ["https://github.com/bansen/media-agent"])
 
+    def test_mcp_extract_reads_github_readme_from_raw_markdown(self):
+        github_url = "https://github.com/3441293738/creatorhub/blob/main/README.md"
+        runner = FakeMCPRunner(
+            {
+                "results": [
+                    {
+                        "content": (
+                            "# CreatorHub\n"
+                            "本地运行的多平台内容管理面板，支持抖音、小红书、快手、视频号。\n"
+                            "统一管理账号、监控作品与评论、下载内容、发布作品和接收通知。"
+                        )
+                    }
+                ]
+            }
+        )
+
+        candidates = collect_websearch_mcp_candidates(github_url + "项目分享", runner=runner)
+
+        self.assertEqual(
+            runner.calls[0][1]["urls"],
+            ["https://raw.githubusercontent.com/3441293738/creatorhub/main/README.md"],
+        )
+        self.assertEqual(candidates[0].url, github_url)
+        self.assertIn("多平台内容管理面板", candidates[0].summary)
+        self.assertNotIn("Sign in", candidates[0].summary)
+
+    def test_mcp_extract_rejects_github_readme_navigation_shell(self):
+        github_url = "https://github.com/3441293738/creatorhub/blob/main/README.md"
+        runner = FakeMCPRunner(
+            {
+                "results": [
+                    {
+                        "content": (
+                            "Skip to content Navigation Menu Sign in Sign up Appearance settings "
+                            "Notifications Fork Star You must be signed in to change notification settings"
+                        )
+                    }
+                ]
+            }
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "README 正文读取失败"):
+            collect_websearch_mcp_candidates(github_url, runner=runner)
+
     def test_mcp_search_maps_results_to_candidates_when_prompt_has_no_url(self):
         runner = FakeMCPRunner(
             {

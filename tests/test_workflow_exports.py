@@ -191,7 +191,7 @@ class WorkflowExportTests(unittest.TestCase):
                     material=96,
                     summary=(
                         "本地运行的多平台内容管理面板，支持抖音、小红书、快手、视频号，"
-                        "可监控作品评论、下载内容和发布作品。"
+                        "可监控作品评论、短视频弹幕、下载内容和发布作品。"
                     ),
                 )
             ],
@@ -204,6 +204,7 @@ class WorkflowExportTests(unittest.TestCase):
         self.assertIn("four distinct content channels", positive_prompt)
         self.assertIn("monitoring", positive_prompt)
         self.assertIn("publishing", positive_prompt)
+        self.assertNotIn("short-video production pipeline", positive_prompt)
         self.assertNotIn("open-source agent system", positive_prompt)
         self.assertIn("generic ai agent network", negative_prompt)
 

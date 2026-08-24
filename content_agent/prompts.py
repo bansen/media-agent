@@ -188,15 +188,15 @@ def _cover_style_for(topic: TopicBrief, channel: str) -> str:
             f"personal knowledge system, linked-note knowledge graph, linked markdown notes, "
             f"organized knowledge clusters, high-resolution editorial cover, {ratio}"
         )
+    if _contains_any(title, ["多平台内容", "多平台运营", "作品监控", "评论监控", "发布转发", "CreatorHub"]):
+        return (
+            f"multi-platform creator operations, four distinct content channels converging into one dashboard, "
+            f"monitoring feed, download queue, publishing workflow, high-resolution editorial cover, {ratio}"
+        )
     if _contains_any(title, ["短视频", "视频脚本", "视频生成", "字幕", "背景音乐", "MoneyPrinterTurbo"]):
         return (
             f"short-video production pipeline, storyboard, script page, media clips, voice waveform, "
             f"subtitle timeline, finished vertical video frames, high-resolution editorial cover, {ratio}"
-        )
-    if _contains_any(title, ["多平台内容", "作品监控", "评论监控", "发布转发", "CreatorHub"]):
-        return (
-            f"multi-platform creator operations, four distinct content channels converging into one dashboard, "
-            f"monitoring feed, download queue, publishing workflow, high-resolution editorial cover, {ratio}"
         )
     if _contains_any(title, ["GitHub 开源项目", "开源项目", "Agent", "智能体", "数字员工", "工作系统"]):
         return (

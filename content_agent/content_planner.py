@@ -289,7 +289,7 @@ def _build_github_project_plan(text: str, url: str | None) -> ContentPlan:
             reader_hook="内容创作者同时运营抖音、小红书、快手和视频号时，账号、作品、评论、下载和发布会被拆在多个后台里来回切换",
             article_promise=f"基于 README 讲清 {project_label} 如何把多平台内容监控、采集下载、发布转发和通知集中到一个本地 Web 面板。",
             title_angles=[
-                f"同时做抖音、小红书和视频号？{project_label} 把 4 个后台装进一个面板",
+                f"多平台运营太分散？{project_label} 把监控、下载、发布收进一处",
                 f"4 个平台来回切换太累？{project_label} 想用一个面板全管起来",
                 f"账号、评论、发布散在 4 个后台，{project_label} 把它们收进一处",
                 f"{project_label} 怎么把多平台监控、下载、发布放进一个面板",
@@ -333,10 +333,7 @@ def _build_github_project_plan(text: str, url: str | None) -> ContentPlan:
         ]
     else:
         title_angles = [
-            f"{project_label} 是什么？先看它解决了哪个真实问题",
-            f"{project_label} 值得关注吗？先看定位与使用边界",
-            f"别只看 Star，{project_label} 真正值得看的是这里",
-            f"准备试 {project_label}？先判断它适不适合你",
+            f"{project_label} 开源：README 里的核心能力和使用边界",
         ]
     if is_agent_project:
         return ContentPlan(

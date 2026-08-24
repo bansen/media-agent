@@ -115,7 +115,8 @@ def collect_websearch_mcp_candidates(
         raise ValueError("prompt cannot be empty")
     urls = [_normalize_url(url) for url in extract_prompt_urls(clean_prompt)]
     if urls:
-        result = runner.call_tool(extract_tool, {"urls": urls[:3], "extract_depth": "advanced"})
+        extraction_urls = [_github_raw_readme_url(url) or url for url in urls[:3]]
+        result = runner.call_tool(extract_tool, {"urls": extraction_urls, "extract_depth": "advanced"})
         return _extract_result_to_candidates(result, urls=urls, limit=limit)
     result = runner.call_tool(search_tool, {"query": clean_prompt, "max_results": limit, "search_depth": "advanced"})
     return _search_result_to_candidates(result, limit=limit)
@@ -140,9 +141,12 @@ def _extract_result_to_candidates(result: dict[str, Any], urls: list[str], limit
         items = [{"url": url, "title": _title_from_url(url), "content": ""} for url in urls]
     candidates: list[CandidateContent] = []
     for index, item in enumerate(items[:limit]):
-        url = str(item.get("url") or item.get("source") or urls[min(index, len(urls) - 1)]).strip()
+        url = urls[min(index, len(urls) - 1)]
         title = _clean_text(str(item.get("title") or _title_from_url(url)))
-        content = _clean_text(str(item.get("raw_content") or item.get("content") or item.get("summary") or ""))
+        raw_content = str(item.get("raw_content") or item.get("content") or item.get("summary") or "")
+        if _github_raw_readme_url(url) and not _usable_github_readme(raw_content):
+            raise RuntimeError("GitHub README 正文读取失败，请稍后重试或确认 README 链接可以公开访问。")
+        content = _clean_text(raw_content)
         candidates.append(_candidate(title=_websearch_title(title, url), url=url, summary=_summary_for(title, content), rank=index, from_link=True))
     return candidates
 
@@ -216,6 +220,28 @@ def _github_repo_ref(url: str) -> str:
     if not match:
         return ""
     return f"{match.group(1)}/{match.group(2).removesuffix('.git')}"
+
+
+def _github_raw_readme_url(url: str) -> str:
+    match = re.match(
+        r"https?://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/blob/([^/]+)/((?:.*/)?README(?:\.[A-Za-z0-9_.-]+)?)$",
+        url,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    owner, repository, revision, path = match.groups()
+    return f"https://raw.githubusercontent.com/{owner}/{repository}/{revision}/{path}"
+
+
+def _usable_github_readme(content: str) -> bool:
+    clean = content.strip()
+    navigation_hits = sum(
+        term.lower() in clean.lower()
+        for term in ["Navigation Menu", "Sign in", "Sign up", "Appearance settings", "Notifications"]
+    )
+    markdown_signal = bool(re.search(r"(?:^|\n)\s*#{1,3}\s+\S", clean)) or "Raw Content: #" in clean
+    return len(clean) >= 60 and markdown_signal and navigation_hits < 3
 
 
 def _title_from_url(url: str) -> str:

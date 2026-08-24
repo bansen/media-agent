@@ -294,7 +294,7 @@ class TitleOptimizerTests(unittest.TestCase):
         optimized_title = result.topics[0].optimized_title
         self.assertEqual(
             optimized_title,
-            "同时做抖音、小红书和视频号？CreatorHub 把 4 个后台装进一个面板",
+            "多平台运营太分散？CreatorHub 把监控、下载、发布收进一处",
         )
         self.assertNotIn("真实问题", optimized_title)
         self.assertNotIn("项目分享", optimized_title)
