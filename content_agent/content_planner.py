@@ -227,6 +227,17 @@ def _is_video_creator_tool(text: str) -> bool:
     return sum(term in text.lower() for term in terms) >= 2
 
 
+def _is_creator_ops_tool(text: str) -> bool:
+    lower = text.lower()
+    platform_hits = sum(term in text for term in ["抖音", "小红书", "快手", "视频号"])
+    operation_hits = sum(term in text for term in ["内容管理", "管理面板", "作品监控", "评论监控", "内容下载", "发布作品", "发布", "通知"])
+    return (
+        "多平台内容" in text
+        or ("web 面板" in lower and platform_hits >= 2 and operation_hits >= 2)
+        or (platform_hits >= 3 and operation_hits >= 2)
+    )
+
+
 def _build_github_project_plan(text: str, url: str | None) -> ContentPlan:
     project_name = _github_project_name(text, url) or "这个开源项目"
     project_label = _github_project_label(project_name)
@@ -269,6 +280,39 @@ def _build_github_project_plan(text: str, url: str | None) -> ContentPlan:
             cover_scene="short-video production pipeline, storyboard, script page, media clips, voice waveform, subtitle timeline, vertical video frames",
             cover_subject="a visual journey from one topic through script, footage, voiceover and subtitles into a finished vertical short video",
             cover_negative="open-source agent system, circuit board, cryptocurrency symbols, generic AI network, raw URL text, unreadable interface text",
+        )
+
+    if _is_creator_ops_tool(text):
+        return ContentPlan(
+            **common,
+            project_kind="creator_ops_tool",
+            reader_hook="内容创作者同时运营抖音、小红书、快手和视频号时，账号、作品、评论、下载和发布会被拆在多个后台里来回切换",
+            article_promise=f"基于 README 讲清 {project_label} 如何把多平台内容监控、采集下载、发布转发和通知集中到一个本地 Web 面板。",
+            title_angles=[
+                f"同时做抖音、小红书和视频号？{project_label} 把 4 个后台装进一个面板",
+                f"4 个平台来回切换太累？{project_label} 想用一个面板全管起来",
+                f"账号、评论、发布散在 4 个后台，{project_label} 把它们收进一处",
+                f"{project_label} 怎么把多平台监控、下载、发布放进一个面板",
+            ],
+            title_rules=[
+                "标题必须保留可读项目名和多平台内容管理结果，不使用“项目分享”或“真实问题”等空泛描述。",
+                "标题要从 README 里的监控、下载、发布、通知等能力提炼具体钩子，不暴露 URL 或仓库路径。",
+            ],
+            opening_rule="开头从多平台创作者在账号、作品、评论、下载和发布之间反复切换的真实痛点切入。",
+            section_flow=[
+                "创作运营痛点：为什么多平台管理会被多个后台拖慢。",
+                "项目定位：它是本地运行的多平台内容管理面板，不是泛 AI Agent 框架。",
+                "核心能力：账号管理、作品监控、评论监控、内容下载、发布转发和通知分别解决什么问题。",
+                "平台覆盖：抖音、小红书、快手、视频号的能力边界有什么不同。",
+                "部署与成本：Python、FastAPI、Playwright、Node.js、ffmpeg 和本地数据存储带来的使用门槛。",
+                "适用判断：哪些内容团队或个人创作者值得试，哪些高频自动操作要谨慎。",
+                "项目地址：只在文末出现一次。",
+            ],
+            ending_rule="结尾建议读者先用一个账号和一个监控目标跑通，再决定是否纳入日常运营流程。",
+            structure="结构：多平台运营痛点 -> 项目定位 -> 核心能力 -> 平台覆盖 -> 部署成本 -> 风控边界 -> 项目地址。",
+            cover_scene="multi-platform creator operations, four distinct content channels converging into one dashboard, content monitoring queue, download status, publishing workflow, notification center",
+            cover_subject="a local web dashboard unifying Douyin, Xiaohongshu, Kuaishou and video-account content operations",
+            cover_negative="generic AI agent network, circuit board, raw URL text, GitHub screenshot, cryptocurrency symbols, unreadable UI text",
         )
 
     is_agent_project = bool(re.search(r"\bagent\b|harness|loopx|智能体|Codex|Claude|工作流|数字员工", text, flags=re.IGNORECASE))
@@ -351,6 +395,7 @@ def _github_project_label(project_name: str) -> str:
     known_terms = {
         "ai": "AI",
         "codex": "Codex",
+        "creatorhub": "CreatorHub",
         "deepseek": "DeepSeek",
         "harness": "Harness",
         "llm": "LLM",

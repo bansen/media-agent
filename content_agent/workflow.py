@@ -115,6 +115,8 @@ def _angle_for(
     plan = build_content_plan_for_text(title, prompt=keyword, source_summary=source_summary, url=url)
     if plan.project_kind == "creator_video_tool":
         return f"把《{title}》写成短视频创作工具解读，围绕从主题、脚本、素材、配音字幕到高清成片的链路和使用边界展开。"
+    if plan.project_kind == "creator_ops_tool":
+        return f"把《{title}》写成多平台内容运营工具解读，围绕账号管理、作品监控、内容下载、发布转发、通知和使用边界展开。"
     if plan.project_kind == "agent_framework":
         return f"把《{title}》写成 Agent 项目解读，围绕真实痛点、项目定位、关键机制、适用人群和项目地址展开。"
     if _is_github_project_topic(title, keyword):

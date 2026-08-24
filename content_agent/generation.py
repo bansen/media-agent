@@ -57,17 +57,18 @@ def generate_llm_drafts(
 
 
 def _wechat_alignment_issues(markdown: str, plan: ContentPlan) -> list[str]:
-    if plan.project_kind != "creator_video_tool":
-        return []
-    video_terms = ["短视频", "视频脚本", "素材", "配音", "字幕", "背景音乐", "成片", "横竖屏", "批量"]
-    agent_drift_terms = ["Agent 跑偏", "遗忘上下文", "长期记忆", "上下文管理", "任务控制"]
-    video_hits = sum(term in markdown for term in video_terms)
-    drift_hits = sum(term in markdown for term in agent_drift_terms)
     issues = []
-    if video_hits < 3:
-        issues.append("没有覆盖从视频脚本、素材、配音字幕到高清成片的短视频链路")
-    if drift_hits >= 2:
-        issues.append("错误写成了 Agent 记忆或上下文管理文章")
+    if plan.project_kind == "creator_video_tool":
+        video_terms = ["短视频", "视频脚本", "素材", "配音", "字幕", "背景音乐", "成片", "横竖屏", "批量"]
+        agent_drift_terms = ["Agent 跑偏", "遗忘上下文", "长期记忆", "上下文管理", "任务控制"]
+        if sum(term in markdown for term in video_terms) < 3:
+            issues.append("没有覆盖从视频脚本、素材、配音字幕到高清成片的短视频链路")
+        if sum(term in markdown for term in agent_drift_terms) >= 2:
+            issues.append("错误写成了 Agent 记忆或上下文管理文章")
+    if plan.project_kind == "creator_ops_tool":
+        operation_terms = ["抖音", "小红书", "快手", "视频号", "作品监控", "评论监控", "下载", "发布", "本地"]
+        if sum(term in markdown for term in operation_terms) < 4:
+            issues.append("没有覆盖 README 中的多平台监控、下载、发布和本地运行能力")
     return issues
 
 
@@ -90,6 +91,10 @@ def _wechat_prompt(result: WorkflowResult) -> str:
             opening_rule.append("开头必须写短视频创作者在脚本、素材、配音、字幕和剪辑之间切换的真实痛点。")
             opening_rule.append("正文必须完整解释视频脚本、匹配素材、配音字幕、背景音乐到高清成片的链路。")
             opening_rule.append("不要改写成 Agent 跑偏、记忆或上下文管理，也不要虚构无人值守收益。")
+        elif plan.project_kind == "creator_ops_tool":
+            opening_rule.append("开头必须写创作者在抖音、小红书、快手和视频号多个后台之间切换的运营痛点。")
+            opening_rule.append("正文必须覆盖账号管理、作品监控、评论监控、内容下载、发布转发和通知，并说明登录态和数据保存在本地。")
+            opening_rule.append("必须区分各平台能力边界和自动操作的风控风险，不得写成泛 AI 工具介绍。")
         elif plan.project_kind == "agent_framework":
             opening_rule.append("开头必须先写 Agent 使用痛点，不要用“今天分享一个 GitHub 链接/项目”开场。")
         else:

@@ -32,6 +32,12 @@ def build_wechat_outline(topic: TopicBrief, keyword: str = "") -> str:
                 "主题锁定：全文必须围绕从主题到高清成片的短视频自动化链路展开；"
                 "不要改写成 Agent 跑偏、记忆或上下文管理，也不要承诺无人值守赚钱。"
             )
+        elif plan.project_kind == "creator_ops_tool":
+            positioning = "定位：GitHub 多平台内容运营工具解读，写给同时运营多个内容平台的创作者和小团队。"
+            topic_lock = (
+                "主题锁定：全文必须围绕抖音、小红书、快手和视频号的账号管理、作品与评论监控、"
+                "内容下载、发布转发和通知展开；明确登录态和数据保存在本地，并写清平台能力差异与风控边界。"
+            )
         elif plan.project_kind == "agent_framework":
             positioning = "定位：GitHub Agent 项目解读，写给关注智能体工作流和开发效率的读者。"
             topic_lock = "主题锁定：全文必须围绕 Agent 项目解决的问题、关键机制和适用人群展开，不要把链接写进标题。"
@@ -100,7 +106,7 @@ def build_cover_prompt(topic: TopicBrief, channel: str = "wechat") -> str:
 def build_cover_strategy(topic: TopicBrief, brief: CreativeBrief, channel: str = "wechat") -> dict[str, str]:
     plan = build_content_plan(topic, brief.raw_prompt)
     core_message = strip_urls(brief.topic)
-    if not core_message or len(core_message) < 4:
+    if plan.content_type == "github_project_share" or not core_message or len(core_message) < 4:
         core_message = topic.optimized_title
     audience = brief.audience or ("20-45 岁职场女性或宝妈" if channel == "xiaohongshu" else "普通内容创作者")
     emotion = _cover_emotion_for(topic, brief, channel)
@@ -146,6 +152,14 @@ def apply_cover_style(base_style: str, cover_style: str = "business-tech") -> st
             "knowledge-card": "clear educational composition showing the short-video creation pipeline, no text",
         }[selected]
         return f"{base_style}, {style_note}"
+    if "multi-platform creator operations" in base_style:
+        style_note = {
+            "business-tech": "polished creator operations editorial visualization, distinct channel lanes, crisp high-resolution detail",
+            "real-photo": "realistic content operations control room with multiple publishing feeds, no generic computer hero shot",
+            "minimal-illustration": "minimal editorial illustration of four content channels converging into one operating dashboard",
+            "knowledge-card": "clear educational composition of monitoring, download and publishing stages, no text",
+        }[selected]
+        return f"{base_style}, {style_note}"
     if "personal knowledge system" in base_style:
         style_note = {
             "business-tech": "refined editorial visualization of connected knowledge, crisp depth, high-resolution",
@@ -178,6 +192,11 @@ def _cover_style_for(topic: TopicBrief, channel: str) -> str:
         return (
             f"short-video production pipeline, storyboard, script page, media clips, voice waveform, "
             f"subtitle timeline, finished vertical video frames, high-resolution editorial cover, {ratio}"
+        )
+    if _contains_any(title, ["多平台内容", "作品监控", "评论监控", "发布转发", "CreatorHub"]):
+        return (
+            f"multi-platform creator operations, four distinct content channels converging into one dashboard, "
+            f"monitoring feed, download queue, publishing workflow, high-resolution editorial cover, {ratio}"
         )
     if _contains_any(title, ["GitHub 开源项目", "开源项目", "Agent", "智能体", "数字员工", "工作系统"]):
         return (

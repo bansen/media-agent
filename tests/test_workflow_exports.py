@@ -175,6 +175,38 @@ class WorkflowExportTests(unittest.TestCase):
         self.assertIn("open-source agent system", negative_prompt)
         self.assertIn("circuit board", negative_prompt)
 
+    def test_wechat_cover_prompt_adapts_to_creator_operations_tool(self):
+        result = run_keyword_workflow(
+            "https://github.com/3441293738/creatorhub/blob/main/README.md 项目分享",
+            candidates=[
+                CandidateContent(
+                    title="GitHub 开源项目：3441293738/creatorhub - CreatorHub",
+                    source="websearch_mcp",
+                    url="https://github.com/3441293738/creatorhub/blob/main/README.md",
+                    heat=92,
+                    interaction=88,
+                    hook=84,
+                    pain=80,
+                    reuse=92,
+                    material=96,
+                    summary=(
+                        "本地运行的多平台内容管理面板，支持抖音、小红书、快手、视频号，"
+                        "可监控作品评论、下载内容和发布作品。"
+                    ),
+                )
+            ],
+            primary_channel="wechat",
+        )
+
+        prompt = result.cover_prompt.lower()
+        positive_prompt, negative_prompt = prompt.split("avoid:", 1)
+        self.assertIn("multi-platform creator operations", positive_prompt)
+        self.assertIn("four distinct content channels", positive_prompt)
+        self.assertIn("monitoring", positive_prompt)
+        self.assertIn("publishing", positive_prompt)
+        self.assertNotIn("open-source agent system", positive_prompt)
+        self.assertIn("generic ai agent network", negative_prompt)
+
     def test_wechat_outline_keeps_keyword_and_selected_material_context(self):
         candidates = [
             CandidateContent(

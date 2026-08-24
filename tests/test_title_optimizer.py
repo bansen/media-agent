@@ -267,6 +267,41 @@ class TitleOptimizerTests(unittest.TestCase):
         self.assertNotIn("Agent", optimized_title)
         self.assertNotIn("真实问题", optimized_title)
 
+    def test_github_creatorhub_title_uses_readme_content_outcome(self):
+        result = run_keyword_workflow(
+            "https://github.com/3441293738/creatorhub/blob/main/README.md 项目分享",
+            candidates=[
+                CandidateContent(
+                    title="GitHub 开源项目：3441293738/creatorhub - CreatorHub",
+                    source="websearch_mcp",
+                    url="https://github.com/3441293738/creatorhub/blob/main/README.md",
+                    heat=92,
+                    interaction=88,
+                    hook=84,
+                    pain=80,
+                    reuse=92,
+                    material=96,
+                    summary=(
+                        "CreatorHub 是本地运行的多平台内容管理面板，支持抖音、小红书、快手、视频号。"
+                        "它用 Python + FastAPI 提供统一 Web 界面，用于管理账号、监控作品与评论、"
+                        "下载内容、发布作品和接收通知。"
+                    ),
+                )
+            ],
+            primary_channel="wechat",
+        )
+
+        optimized_title = result.topics[0].optimized_title
+        self.assertEqual(
+            optimized_title,
+            "同时做抖音、小红书和视频号？CreatorHub 把 4 个后台装进一个面板",
+        )
+        self.assertNotIn("真实问题", optimized_title)
+        self.assertNotIn("项目分享", optimized_title)
+        self.assertNotIn("github.com", optimized_title)
+        self.assertIn("多平台内容运营工具解读", result.topics[0].angle)
+        self.assertIn("作品监控", result.topics[0].angle)
+
 
 if __name__ == "__main__":
     unittest.main()

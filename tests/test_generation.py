@@ -252,6 +252,38 @@ class GenerationTests(unittest.TestCase):
         self.assertIn("高清成片", drafts["wechat_article"])
         self.assertNotIn("Agent 经常跑偏", drafts["wechat_article"])
 
+    def test_wechat_prompt_uses_creator_operations_readme_plan(self):
+        result = run_keyword_workflow(
+            "https://github.com/3441293738/creatorhub/blob/main/README.md 项目分享",
+            [
+                CandidateContent(
+                    title="GitHub 开源项目：3441293738/creatorhub - CreatorHub",
+                    source="websearch_mcp",
+                    url="https://github.com/3441293738/creatorhub/blob/main/README.md",
+                    heat=92,
+                    interaction=88,
+                    hook=84,
+                    pain=80,
+                    reuse=92,
+                    material=96,
+                    summary=(
+                        "CreatorHub 是本地运行的多平台内容管理面板，支持抖音、小红书、快手、视频号。"
+                        "统一管理账号、监控作品与评论、下载内容、发布作品和接收通知，数据保存在本地。"
+                    ),
+                )
+            ],
+        )
+        llm = FakeLLMProvider("# CreatorHub\n\n多平台账号、作品监控、内容下载和发布都集中在本地面板。")
+
+        generate_llm_drafts(result, llm)
+
+        prompt = llm.prompts[0]
+        self.assertIn("多平台内容运营工具", prompt)
+        self.assertIn("抖音、小红书、快手和视频号", prompt)
+        self.assertIn("账号管理、作品监控、评论监控、内容下载、发布转发和通知", prompt)
+        self.assertIn("登录态和数据保存在本地", prompt)
+        self.assertNotIn("开头必须先写 Agent 使用痛点", prompt)
+
     def test_wechat_article_title_is_forced_to_selected_topic(self):
         result = run_keyword_workflow(
             "minimax h3介绍",
