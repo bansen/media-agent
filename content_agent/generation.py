@@ -69,6 +69,13 @@ def _wechat_alignment_issues(markdown: str, plan: ContentPlan) -> list[str]:
         operation_terms = ["抖音", "小红书", "快手", "视频号", "作品监控", "评论监控", "下载", "发布", "本地"]
         if sum(term in markdown for term in operation_terms) < 4:
             issues.append("没有覆盖 README 中的多平台监控、下载、发布和本地运行能力")
+    if plan.project_kind == "presentation_tool":
+        presentation_terms = ["PPT", "可编辑", "编辑控制台", "布局", "配色", "PPTX", "导出"]
+        agent_drift_terms = ["Agent 跑偏", "遗忘上下文", "长期记忆", "上下文管理", "任务控制"]
+        if sum(term in markdown for term in presentation_terms) < 3:
+            issues.append("没有覆盖 README 中生成后编辑、版式控制和 PPTX 导出能力")
+        if sum(term in markdown for term in agent_drift_terms) >= 2:
+            issues.append("错误写成了 Agent 记忆或上下文管理文章")
     return issues
 
 
@@ -95,6 +102,10 @@ def _wechat_prompt(result: WorkflowResult) -> str:
             opening_rule.append("开头必须写创作者在抖音、小红书、快手和视频号多个后台之间切换的运营痛点。")
             opening_rule.append("正文必须覆盖账号管理、作品监控、评论监控、内容下载、发布转发和通知，并说明登录态和数据保存在本地。")
             opening_rule.append("必须区分各平台能力边界和自动操作的风控风险，不得写成泛 AI 工具介绍。")
+        elif plan.project_kind == "presentation_tool":
+            opening_rule.append("开头必须写 AI 生成 PPT 很快、但生成后难修改和难交付的职场痛点。")
+            opening_rule.append("正文必须覆盖自动组稿、浏览器编辑控制台、主题版式和可编辑 PPTX 导出能力。")
+            opening_rule.append("不要改写成 Agent 跑偏、记忆或上下文管理；Codex、Claude 只能作为兼容平台提及。")
         elif plan.project_kind == "agent_framework":
             opening_rule.append("开头必须先写 Agent 使用痛点，不要用“今天分享一个 GitHub 链接/项目”开场。")
         else:

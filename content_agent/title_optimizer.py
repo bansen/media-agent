@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from .content_planner import build_content_plan_for_text, strip_urls
+from .content_planner import ContentPlan, build_content_plan_for_text, strip_urls
 from .creative_brief import CreativeBrief, build_creative_brief, is_creative_prompt
 from .keyword_intent import extract_keyword_entity, extract_keyword_modifiers, parse_keyword_intent
 from .models import ContentChannel
@@ -47,7 +47,11 @@ def build_title_candidates(
     legacy = _sanitize_title(_legacy_optimize_title(title, channel, keyword=keyword))
     raw_candidates = _candidate_titles(clean_title, channel, keyword, brief, source_summary=source_summary, url=url)
     scored = [
-        {"title": _sanitize_title(candidate), "score": _score_title(candidate, clean_title, brief, channel), "reason": _title_reason(candidate, brief)}
+        {
+            "title": _sanitize_title(candidate),
+            "score": _score_title(candidate, clean_title, brief, channel, plan=plan),
+            "reason": _title_reason(candidate, brief),
+        }
         for candidate in raw_candidates
         if candidate.strip()
     ]
@@ -184,7 +188,13 @@ def _general_title_candidates(title: str, brief: CreativeBrief) -> list[str]:
     ]
 
 
-def _score_title(title: str, source_title: str, brief: CreativeBrief, channel: ContentChannel) -> float:
+def _score_title(
+    title: str,
+    source_title: str,
+    brief: CreativeBrief,
+    channel: ContentChannel,
+    plan: ContentPlan | None = None,
+) -> float:
     text = f"{title} {source_title}"
     score = 50.0
     topic_terms = _title_terms(brief.topic)
@@ -210,10 +220,14 @@ def _score_title(title: str, source_title: str, brief: CreativeBrief, channel: C
         score -= 8
     if any(term in title for term in ["是什么", "真实问题", "值得关注吗", "准备试", "适不适合你", "先看懂这 3 点"]):
         score -= 18
-    if _looks_like_github_project(source_title, brief.raw_prompt) and any(
-        term in title for term in ["开源项目", "Agent", "数字员工", "工作系统", "连续工作"]
-    ):
-        score += 24
+    value_keywords = list(getattr(plan, "value_keywords", []) or [])
+    if value_keywords:
+        value_hits = sum(1 for term in value_keywords if term and term.lower() in title.lower())
+        score += min(30, value_hits * 6)
+        if getattr(plan, "content_type", "") == "github_project_share" and value_hits == 0:
+            score -= 24
+    if any(term in title for term in ["是什么", "值得关注吗", "README 里的核心能力", "工作系统"]):
+        score -= 12
     if _contains_any(source_title, ["坑", "骗局", "卖课", "割韭菜"]) and "坑" in title:
         score += 10
     if _contains_any(source_title, ["交易", "服务", "需求", "增长"]) and "第一单" in title:

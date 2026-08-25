@@ -38,6 +38,12 @@ def build_wechat_outline(topic: TopicBrief, keyword: str = "") -> str:
                 "主题锁定：全文必须围绕抖音、小红书、快手和视频号的账号管理、作品与评论监控、"
                 "内容下载、发布转发和通知展开；明确登录态和数据保存在本地，并写清平台能力差异与风控边界。"
             )
+        elif plan.project_kind == "presentation_tool":
+            positioning = "定位：GitHub PPT 生产与编辑工具解读，写给需要快速完成职场汇报、方案和演示文稿的读者。"
+            topic_lock = (
+                "主题锁定：全文必须围绕 AI 生成 PPT 后难修改、版式难控制和难交付的问题展开；"
+                "重点解释浏览器编辑控制台、版式主题和可编辑 PPTX 导出，不得改写成 Agent 跑偏或上下文管理。"
+            )
         elif plan.project_kind == "agent_framework":
             positioning = "定位：GitHub Agent 项目解读，写给关注智能体工作流和开发效率的读者。"
             topic_lock = "主题锁定：全文必须围绕 Agent 项目解决的问题、关键机制和适用人群展开，不要把链接写进标题。"
@@ -152,6 +158,14 @@ def apply_cover_style(base_style: str, cover_style: str = "business-tech") -> st
             "knowledge-card": "clear educational composition showing the short-video creation pipeline, no text",
         }[selected]
         return f"{base_style}, {style_note}"
+    if "editable presentation workflow" in base_style:
+        style_note = {
+            "business-tech": "polished presentation-production visualization, crisp editable slide layers, high-resolution",
+            "real-photo": "realistic presentation editing session with clearly visible slide layout adjustments, no generic laptop hero shot",
+            "minimal-illustration": "minimal editorial illustration of a document becoming editable presentation slides and PPTX",
+            "knowledge-card": "clear educational composition of document, editable slides and PPTX export, no text",
+        }[selected]
+        return f"{base_style}, {style_note}"
     if "multi-platform creator operations" in base_style:
         style_note = {
             "business-tech": "polished creator operations editorial visualization, distinct channel lanes, crisp high-resolution detail",
@@ -197,6 +211,11 @@ def _cover_style_for(topic: TopicBrief, channel: str) -> str:
         return (
             f"short-video production pipeline, storyboard, script page, media clips, voice waveform, "
             f"subtitle timeline, finished vertical video frames, high-resolution editorial cover, {ratio}"
+        )
+    if _contains_any(title, ["PPT", "PPTX", "演示文稿", "编辑控制台", "Dashi"]):
+        return (
+            f"editable presentation workflow, document transforming into polished editable slides, "
+            f"layout controls, color adjustments, PPTX export, high-resolution editorial cover, {ratio}"
         )
     if _contains_any(title, ["GitHub 开源项目", "开源项目", "Agent", "智能体", "数字员工", "工作系统"]):
         return (

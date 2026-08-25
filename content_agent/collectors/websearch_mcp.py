@@ -146,7 +146,7 @@ def _extract_result_to_candidates(result: dict[str, Any], urls: list[str], limit
         raw_content = str(item.get("raw_content") or item.get("content") or item.get("summary") or "")
         if _github_raw_readme_url(url) and not _usable_github_readme(raw_content):
             raise RuntimeError("GitHub README 正文读取失败，请稍后重试或确认 README 链接可以公开访问。")
-        content = _clean_text(raw_content)
+        content = _clean_readme_content(raw_content) if _github_raw_readme_url(url) else _clean_text(raw_content)
         candidates.append(_candidate(title=_websearch_title(title, url), url=url, summary=_summary_for(title, content), rank=index, from_link=True))
     return candidates
 
@@ -273,6 +273,30 @@ def _normalize_match(text: str) -> str:
 
 def _clean_text(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
+
+
+def _clean_readme_content(value: str) -> str:
+    useful_lines: list[str] = []
+    for raw_line in value.splitlines():
+        line = raw_line.strip()
+        lower = line.lower()
+        if not line:
+            continue
+        if line.startswith("[![") or "img.shields.io" in lower or "badge.svg" in lower:
+            continue
+        if line.startswith("![") or re.fullmatch(r"<img\b[^>]*>", line, flags=re.IGNORECASE):
+            continue
+        if lower.startswith(("title:", "url source:", "markdown content:")):
+            continue
+        line = re.sub(r"<!--.*?-->", "", line)
+        line = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", line)
+        line = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", line)
+        line = re.sub(r"^#{1,6}\s*", "", line)
+        line = re.sub(r"^[-*+]\s+", "", line)
+        line = re.sub(r"\s+", " ", line).strip()
+        if line:
+            useful_lines.append(line)
+    return _clean_text(" ".join(useful_lines))
 
 
 def _signal(text: str, terms: list[str]) -> int:

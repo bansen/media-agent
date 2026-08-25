@@ -176,6 +176,37 @@ class TitleOptimizerTests(unittest.TestCase):
         self.assertNotIn("如视频相关等", optimized_title)
         self.assertLessEqual(len(optimized_title), 28)
 
+    def test_github_presentation_tool_title_uses_readme_problem_and_outcome(self):
+        result = run_keyword_workflow(
+            "https://github.com/chuspeeism/dashi-ppt-skill/blob/main/README.md 项目分享",
+            candidates=[
+                CandidateContent(
+                    title="GitHub 开源项目：chuspeeism/dashi-ppt-skill - dashi-ppt-skill",
+                    source="websearch_mcp",
+                    url="https://github.com/chuspeeism/dashi-ppt-skill/blob/main/README.md",
+                    heat=92,
+                    interaction=88,
+                    hook=84,
+                    pain=80,
+                    reuse=92,
+                    material=96,
+                    summary=(
+                        "一个真正适合职场人的 PPT Skill。把文档丢给 AI Agent，"
+                        "每一页都自带编辑控制台，不满意的地方可以直接在浏览器里改，"
+                        "还能一键导出成真实、可编辑的 PPTX。支持 Claude Code、Codex 等 Agent。"
+                    ),
+                )
+            ],
+            primary_channel="wechat",
+        )
+
+        optimized_title = result.topics[0].optimized_title
+        self.assertIn("PPT", optimized_title)
+        self.assertTrue(any(term in optimized_title for term in ["能改", "可编辑", "导出", "PPTX", "交付"]))
+        self.assertNotIn("Agent 总是跑偏", optimized_title)
+        self.assertNotIn("工作系统", optimized_title)
+        self.assertNotIn("github.com", optimized_title)
+
     def test_github_project_prompt_uses_hook_title_without_exposing_url(self):
         candidates = [
             CandidateContent(

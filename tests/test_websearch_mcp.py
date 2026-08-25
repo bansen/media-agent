@@ -95,6 +95,30 @@ class WebSearchMCPTests(unittest.TestCase):
         self.assertIn("多平台内容管理面板", candidates[0].summary)
         self.assertNotIn("Sign in", candidates[0].summary)
 
+    def test_mcp_extract_prioritizes_readme_description_over_badge_noise(self):
+        github_url = "https://github.com/chuspeeism/dashi-ppt-skill/blob/main/README.md"
+        badge = "[![GitHub stars](https://img.shields.io/badge/stars-blue)](https://example.com)"
+        runner = FakeMCPRunner(
+            {
+                "results": [
+                    {
+                        "content": (
+                            "# Dashi PPT Skill\n"
+                            + "\n".join([badge] * 30)
+                            + "\n一个真正适合职场人的 PPT Skill。"
+                            "每一页都自带编辑控制台，还能一键导出可编辑 PPTX。"
+                        )
+                    }
+                ]
+            }
+        )
+
+        candidates = collect_websearch_mcp_candidates(github_url + "项目分享", runner=runner)
+
+        self.assertIn("适合职场人的 PPT Skill", candidates[0].summary)
+        self.assertIn("导出可编辑 PPTX", candidates[0].summary)
+        self.assertNotIn("img.shields.io", candidates[0].summary)
+
     def test_mcp_extract_rejects_github_readme_navigation_shell(self):
         github_url = "https://github.com/3441293738/creatorhub/blob/main/README.md"
         runner = FakeMCPRunner(

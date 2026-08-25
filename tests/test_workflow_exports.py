@@ -142,6 +142,40 @@ class WorkflowExportTests(unittest.TestCase):
         self.assertNotIn("分享 的文章", result.cover_prompt)
         self.assertNotIn("github.com", result.cover_prompt)
 
+    def test_wechat_presentation_project_shares_one_value_brief_across_outputs(self):
+        result = run_keyword_workflow(
+            "https://github.com/chuspeeism/dashi-ppt-skill/blob/main/README.md 项目分享",
+            candidates=[
+                CandidateContent(
+                    title="GitHub 开源项目：chuspeeism/dashi-ppt-skill - dashi-ppt-skill",
+                    source="websearch_mcp",
+                    url="https://github.com/chuspeeism/dashi-ppt-skill/blob/main/README.md",
+                    heat=92,
+                    interaction=88,
+                    hook=84,
+                    pain=80,
+                    reuse=92,
+                    material=96,
+                    summary=(
+                        "一个真正适合职场人的 PPT Skill。把文档丢给 AI Agent，"
+                        "每一页都自带编辑控制台，可以修改文字、图片、布局和配色，"
+                        "并一键导出可编辑 PPTX。支持 Claude Code、Codex 等 Agent。"
+                    ),
+                )
+            ],
+            primary_channel="wechat",
+        )
+
+        positive_prompt, negative_prompt = result.cover_prompt.lower().split("avoid:", 1)
+        self.assertIn("presentation", positive_prompt)
+        self.assertIn("editable slide", positive_prompt)
+        self.assertIn("pptx", positive_prompt)
+        self.assertNotIn("open-source agent system", positive_prompt)
+        self.assertIn("ppt", result.wechat_outline.lower())
+        self.assertIn("可编辑", result.wechat_outline)
+        self.assertNotIn("Agent 总是跑偏", result.wechat_outline)
+        self.assertIn("agent workflow", negative_prompt)
+
     def test_wechat_cover_prompt_adapts_to_github_video_creator_tool(self):
         result = run_keyword_workflow(
             "https://github.com/harry0703/MoneyPrinterTurbo/blob/main/README.md 项目分享",

@@ -25,6 +25,9 @@ class ContentPlan:
     cover_scene: str = ""
     cover_subject: str = ""
     cover_negative: str = ""
+    core_problem: str = ""
+    core_outcome: str = ""
+    value_keywords: list[str] = field(default_factory=list)
 
 
 def build_content_plan(topic: TopicBrief, prompt: str = "") -> ContentPlan:
@@ -238,6 +241,44 @@ def _is_creator_ops_tool(text: str) -> bool:
     )
 
 
+def _is_presentation_tool(text: str) -> bool:
+    lower = text.lower()
+    presentation_hits = sum(term in lower for term in ["ppt", "pptx", "presentation", "slide", "演示文稿"])
+    delivery_hits = sum(
+        term in lower
+        for term in ["可编辑", "编辑控制台", "浏览器里改", "修改文字", "换布局", "换配色", "导出", "export"]
+    )
+    return presentation_hits >= 2 and delivery_hits >= 2
+
+
+def _is_agent_framework(text: str) -> bool:
+    lower = text.lower()
+    strong_identity_hits = sum(
+        term in lower
+        for term in ["agent framework", "agent harness", "智能体框架", "数字员工"]
+    )
+    workflow_identity_hits = sum(term in lower for term in ["agent 系统", "agent 工作流"])
+    mechanism_hits = sum(
+        term in lower
+        for term in [
+            "长期工作",
+            "任务控制",
+            "上下文",
+            "长期记忆",
+            "插件架构",
+            "一切皆插件",
+            "plugin architecture",
+            "harness",
+            "loopx",
+        ]
+    )
+    return (
+        strong_identity_hits >= 1
+        or (workflow_identity_hits >= 1 and mechanism_hits >= 1)
+        or ("agent" in lower and mechanism_hits >= 2)
+    )
+
+
 def _build_github_project_plan(text: str, url: str | None) -> ContentPlan:
     project_name = _github_project_name(text, url) or "这个开源项目"
     project_label = _github_project_label(project_name)
@@ -315,7 +356,48 @@ def _build_github_project_plan(text: str, url: str | None) -> ContentPlan:
             cover_negative="generic AI agent network, circuit board, raw URL text, GitHub screenshot, cryptocurrency symbols, unreadable UI text",
         )
 
-    is_agent_project = bool(re.search(r"\bagent\b|harness|loopx|智能体|Codex|Claude|工作流|数字员工", text, flags=re.IGNORECASE))
+    if _is_presentation_tool(text):
+        return ContentPlan(
+            **common,
+            project_kind="presentation_tool",
+            reader_hook="AI 已经能快速生成 PPT，但生成后的文字、图片、布局和配色往往难改，也很难交付真正可编辑的 PPTX",
+            article_promise=(
+                f"基于 README 讲清 {project_label} 如何把文档变成可继续编辑、可切换版式并能导出 PPTX 的演示文稿。"
+            ),
+            title_angles=[
+                "AI 生成的 PPT 终于能改了，还能直接导出 PPTX",
+                "AI 做 PPT 最难的不是生成，而是生成后没法改",
+                "把文档丢给 Agent，生成一套能改、能交付的 PPT",
+                f"{project_label}：让 AI 生成的 PPT 从“能看”变成“能交付”",
+                f"PPT 生成后还要重做？{project_label} 把编辑和导出补齐了",
+            ],
+            title_rules=[
+                "标题必须突出 README 对应的核心问题或用户结果：生成后可编辑、版式可控、可导出 PPTX。",
+                "Agent、Codex、Claude 等兼容平台不能作为标题主线，不暴露 URL 或仓库路径。",
+                "不强制每个标题出现项目名，允许用明确结果保留点击悬念。",
+            ],
+            opening_rule="开头从 AI 生成 PPT 看似很快、但生成后难修改和难交付的真实职场痛点切入。",
+            section_flow=[
+                "核心痛点：为什么 AI 会生成 PPT，不等于能交付一份可继续修改的 PPT。",
+                "项目定位：它是带浏览器编辑控制台和 PPTX 导出能力的 PPT Skill，不是 Agent 工作流框架。",
+                "生成能力：如何把文档整理成结构完整、视觉统一的演示文稿。",
+                "编辑能力：如何修改文字、图片、布局、模块数量、配色和页面顺序。",
+                "交付能力：HTML、PDF 和可编辑 PPTX 分别适合什么场景。",
+                "使用门槛：Node.js、浏览器环境、Token 消耗和风格定制边界。",
+                "适用判断：哪些职场汇报和方案展示值得试，哪些逐像素设计需求不适合。",
+                "项目地址：只在文末出现一次。",
+            ],
+            ending_rule="结尾建议读者先用一份真实文档生成并修改几页，再以修改成本和 PPTX 可编辑性判断是否采用。",
+            structure="结构：生成后难修改的痛点 -> 项目定位 -> 自动组稿 -> 浏览器编辑 -> PPTX 交付 -> 使用成本与边界 -> 适用人群 -> 项目地址。",
+            cover_scene="editable presentation workflow, document transforming into a polished slide deck, browser editing controls, layout and color adjustments, PPTX export",
+            cover_subject="a sequence of editable slides with visible layout controls and a clear PPTX export outcome",
+            cover_negative="open-source agent workflow, task graph, memory nodes, circuit board, raw URL text, GitHub screenshot, generic office desk",
+            core_problem="AI 生成 PPT 后难修改、版式不可控，难以直接交付",
+            core_outcome="从文档生成可继续编辑并可导出 PPTX 的完整演示文稿",
+            value_keywords=["PPT", "能改", "可编辑", "修改", "导出", "PPTX", "交付"],
+        )
+
+    is_agent_project = _is_agent_framework(text)
     if is_agent_project and _is_plugin_architecture(text):
         title_angles = [
             f"{project_label} 开源：一个“一切皆插件”的 Agent 框架",
@@ -360,6 +442,9 @@ def _build_github_project_plan(text: str, url: str | None) -> ContentPlan:
             cover_scene="open-source agent system, abstract workflow nodes, automation timeline, connected task graph, clean technical interface",
             cover_subject="由任务节点、上下文记忆和自动化时间线组成的 Agent 工作系统",
             cover_negative="generic workspace photography, computer hero shot, raw URL text, GitHub page screenshot, white card, poster board",
+            core_problem="Agent 容易跑偏、断上下文，难以持续完成长任务",
+            core_outcome="让目标、上下文和执行过程更稳定地持续推进",
+            value_keywords=["Agent", "长期", "任务", "上下文", "工作流", "数字员工", "插件"],
         )
     return ContentPlan(
         **common,
@@ -375,6 +460,9 @@ def _build_github_project_plan(text: str, url: str | None) -> ContentPlan:
         cover_scene="open-source product concept matching the README, clear functional workflow, editorial product visualization",
         cover_subject="the project's primary user outcome rather than a generic computer or circuit network",
         cover_negative="generic AI network, circuit board, raw URL text, GitHub screenshot, unreadable interface text",
+        core_problem="读者难以快速判断项目解决什么问题、是否值得投入时间",
+        core_outcome="看懂项目定位、核心能力、使用门槛和适用人群",
+        value_keywords=[project_label, "核心能力", "使用", "适用"],
     )
 
 
@@ -398,6 +486,7 @@ def _github_project_label(project_name: str) -> str:
         "llm": "LLM",
         "loopx": "LoopX",
         "mcp": "MCP",
+        "ppt": "PPT",
     }
     words = [word for word in re.split(r"[-_]+", repository) if word]
     return " ".join(known_terms.get(word.lower(), word if any(char.isupper() for char in word) else word.capitalize()) for word in words)
