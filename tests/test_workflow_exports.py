@@ -176,6 +176,38 @@ class WorkflowExportTests(unittest.TestCase):
         self.assertNotIn("Agent 总是跑偏", result.wechat_outline)
         self.assertIn("agent workflow", negative_prompt)
 
+    def test_story_video_project_keeps_title_outline_and_cover_on_same_outcome(self):
+        result = run_keyword_workflow(
+            "https://github.com/openstory-so/openstory/blob/main/README.md 分享",
+            candidates=[
+                CandidateContent(
+                    title="GitHub 开源项目：openstory-so/openstory - openstory",
+                    source="websearch_mcp",
+                    url="https://github.com/openstory-so/openstory/blob/main/README.md",
+                    heat=92,
+                    interaction=88,
+                    hook=84,
+                    pain=80,
+                    reuse=92,
+                    material=96,
+                    summary=(
+                        "Transform scripts into styled video productions using AI. OpenStory takes a script "
+                        "and produces AI-generated frames, motion video and audio with consistent characters, "
+                        "locations and visual styles across every scene."
+                    ),
+                )
+            ],
+            primary_channel="wechat",
+        )
+
+        positive_prompt, negative_prompt = result.cover_prompt.lower().split("avoid:", 1)
+        self.assertIn("story-to-video", positive_prompt)
+        self.assertIn("cinematic frames", positive_prompt)
+        self.assertNotIn("open-source agent system", positive_prompt)
+        self.assertIn("脚本", result.wechat_outline)
+        self.assertIn("风格一致", result.wechat_outline)
+        self.assertIn("agent task graph", negative_prompt)
+
     def test_wechat_cover_prompt_adapts_to_github_video_creator_tool(self):
         result = run_keyword_workflow(
             "https://github.com/harry0703/MoneyPrinterTurbo/blob/main/README.md 项目分享",

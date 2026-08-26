@@ -20,6 +20,8 @@ FORBIDDEN_TITLE_TERMS = [
     "诊断",
 ]
 
+SOURCE_ONLY_TITLE_TERMS = ["README", "项目资料", "项目分享", "素材摘要", "仓库路径"]
+
 
 def optimize_title(
     title: str,
@@ -61,6 +63,8 @@ def build_title_candidates(
     for item in scored:
         title_key = str(item["title"])
         if not title_key or _contains_any(title_key, FORBIDDEN_TITLE_TERMS):
+            continue
+        if any(term.lower() in title_key.lower() for term in SOURCE_ONLY_TITLE_TERMS):
             continue
         if title_key not in unique or float(item["score"]) > float(unique[title_key]["score"]):
             unique[title_key] = item

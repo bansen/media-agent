@@ -207,6 +207,37 @@ class TitleOptimizerTests(unittest.TestCase):
         self.assertNotIn("工作系统", optimized_title)
         self.assertNotIn("github.com", optimized_title)
 
+    def test_generic_github_title_never_exposes_readme_as_reader_value(self):
+        result = run_keyword_workflow(
+            "https://github.com/openstory-so/openstory/blob/main/README.md 分享",
+            candidates=[
+                CandidateContent(
+                    title="GitHub 开源项目：openstory-so/openstory - openstory",
+                    source="websearch_mcp",
+                    url="https://github.com/openstory-so/openstory/blob/main/README.md",
+                    heat=92,
+                    interaction=88,
+                    hook=84,
+                    pain=80,
+                    reuse=92,
+                    material=96,
+                    summary=(
+                        "Transform scripts into styled video productions using AI. OpenStory takes a script "
+                        "and produces AI-generated frames, motion video and audio with consistent characters, "
+                        "locations and visual styles across every scene."
+                    ),
+                )
+            ],
+            primary_channel="wechat",
+        )
+
+        optimized_title = result.topics[0].optimized_title
+        self.assertIn("Openstory", optimized_title)
+        self.assertTrue(any(term in optimized_title for term in ["脚本", "视频", "镜头"]))
+        self.assertTrue(any(term in optimized_title for term in ["风格", "统一", "一致", "成片"]))
+        self.assertNotIn("README", optimized_title.upper())
+        self.assertTrue(all("README" not in str(item["title"]).upper() for item in result.topics[0].title_candidates))
+
     def test_github_project_prompt_uses_hook_title_without_exposing_url(self):
         candidates = [
             CandidateContent(

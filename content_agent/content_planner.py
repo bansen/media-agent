@@ -230,6 +230,23 @@ def _is_video_creator_tool(text: str) -> bool:
     return sum(term in text.lower() for term in terms) >= 2
 
 
+def _is_story_video_tool(text: str) -> bool:
+    lower = text.lower()
+    story_hits = sum(
+        term in lower
+        for term in ["script", "screenplay", "scene breakdown", "camera angles", "脚本", "分镜", "镜头"]
+    )
+    production_hits = sum(
+        term in lower
+        for term in ["ai-generated frames", "motion video", "image-to-video", "audio", "compositing", "动态视频", "成片"]
+    )
+    consistency_hits = sum(
+        term in lower
+        for term in ["style consistency", "consistent style", "continuity tracking", "characters", "locations", "视觉风格", "角色一致"]
+    )
+    return story_hits >= 1 and production_hits >= 1 and consistency_hits >= 1
+
+
 def _is_creator_ops_tool(text: str) -> bool:
     lower = text.lower()
     platform_hits = sum(term in text for term in ["抖音", "小红书", "快手", "视频号"])
@@ -289,6 +306,42 @@ def _build_github_project_plan(text: str, url: str | None) -> ContentPlan:
         "link_policy": "链接只在文末以“项目地址：...”出现一次，正文中不要反复展示 URL。",
         "repetition_rule": "每个小节必须提供一个新判断，禁止连续两节重复“它能提升效率/值得关注”这类空话。",
     }
+    if _is_story_video_tool(text):
+        return ContentPlan(
+            **common,
+            project_kind="story_video_tool",
+            reader_hook="把脚本做成视频时，拆镜头、生成画面和添加动态并不难，难的是让角色、场景和视觉风格跨镜头保持一致",
+            article_promise=f"讲清 {project_label} 如何把脚本拆成镜头并生成风格统一的视频制作序列，以及它适合哪些创作团队。",
+            title_angles=[
+                f"脚本变视频最怕画面不统一，{project_label} 把制作链串起来了",
+                f"从脚本到风格统一的成片，{project_label} 想解决最难的一步",
+                f"AI 视频不缺画面，{project_label} 更在意跨镜头的一致性",
+                f"一份脚本如何变成连续镜头？{project_label} 给出了一套流程",
+            ],
+            title_rules=[
+                "标题必须突出脚本转视频或跨镜头风格一致这个核心结果，不能把 README、仓库路径或技术栈当卖点。",
+                "标题可以保留项目名，但必须同时给读者明确的场景、问题或结果。",
+            ],
+            opening_rule="开头从 AI 视频逐帧都能生成、但角色和场景经常前后不一致的创作痛点切入。",
+            section_flow=[
+                "核心痛点：为什么单张图好看，不等于一组镜头能组成连续故事。",
+                "项目定位：它把脚本分析、分镜、画面、动态和音频放进同一条制作链。",
+                "脚本拆解：如何生成场景、机位、情绪和连续性要求。",
+                "画面生产：图片、图生视频和音频如何组合成镜头序列。",
+                "一致性机制：角色、地点、色彩和光线如何跨场景复用。",
+                "协作与门槛：团队素材库、模型服务、部署成本和功能成熟度。",
+                "适用判断：哪些叙事视频团队值得试，哪些专业后期需求仍要人工完成。",
+                "项目地址：只在文末出现一次。",
+            ],
+            ending_rule="结尾建议用一段包含同一角色和多个场景的短脚本测试连续性，再判断是否进入正式制作。",
+            structure="结构：跨镜头不一致的痛点 -> 项目定位 -> 脚本拆解 -> 画面与动态生成 -> 风格一致性 -> 协作与成本 -> 适用判断 -> 项目地址。",
+            cover_scene="story-to-video production pipeline, screenplay breaking into cinematic frames, consistent character and location across scenes, motion and audio layers",
+            cover_subject="a sequence of cinematic frames showing one consistent character moving through a coherent visual story",
+            cover_negative="README document, raw URL text, GitHub screenshot, generic office desk, unrelated agent task graph, inconsistent characters",
+            core_problem="脚本转视频时角色、场景和视觉风格容易跨镜头失去一致性",
+            core_outcome="把脚本拆成镜头并生成风格连续的图片、动态视频和音频序列",
+            value_keywords=[project_label, "脚本", "视频", "镜头", "风格", "统一", "一致", "成片"],
+        )
     if _is_video_creator_tool(text):
         return ContentPlan(
             **common,
@@ -415,7 +468,9 @@ def _build_github_project_plan(text: str, url: str | None) -> ContentPlan:
         ]
     else:
         title_angles = [
-            f"{project_label} 开源：README 里的核心能力和使用边界",
+            f"{project_label} 开源：它解决了什么问题，适合谁用",
+            f"{project_label} 值不值得试？先看核心场景和使用门槛",
+            f"别只看项目热度，{project_label} 的实际价值在这里",
         ]
     if is_agent_project:
         return ContentPlan(

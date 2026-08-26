@@ -38,6 +38,12 @@ def build_wechat_outline(topic: TopicBrief, keyword: str = "") -> str:
                 "主题锁定：全文必须围绕抖音、小红书、快手和视频号的账号管理、作品与评论监控、"
                 "内容下载、发布转发和通知展开；明确登录态和数据保存在本地，并写清平台能力差异与风控边界。"
             )
+        elif plan.project_kind == "story_video_tool":
+            positioning = "定位：GitHub AI 叙事视频生产工具解读，写给需要把脚本转成连续镜头的视频创作者和团队。"
+            topic_lock = (
+                "主题锁定：全文必须围绕脚本拆解、镜头生成、动态音频和跨场景风格一致性展开；"
+                "不要改写成泛 AI 视频工具清单或 Agent 工作流介绍。"
+            )
         elif plan.project_kind == "presentation_tool":
             positioning = "定位：GitHub PPT 生产与编辑工具解读，写给需要快速完成职场汇报、方案和演示文稿的读者。"
             topic_lock = (
@@ -158,6 +164,14 @@ def apply_cover_style(base_style: str, cover_style: str = "business-tech") -> st
             "knowledge-card": "clear educational composition showing the short-video creation pipeline, no text",
         }[selected]
         return f"{base_style}, {style_note}"
+    if "story-to-video production pipeline" in base_style:
+        style_note = {
+            "business-tech": "cinematic story-production visualization, consistent character across frames, crisp high-resolution detail",
+            "real-photo": "realistic film preproduction wall with a coherent character and location repeated across consecutive shots",
+            "minimal-illustration": "minimal editorial illustration of one script becoming a consistent sequence of cinematic frames",
+            "knowledge-card": "clear educational composition of script analysis, frames, motion and audio, no text",
+        }[selected]
+        return f"{base_style}, {style_note}"
     if "editable presentation workflow" in base_style:
         style_note = {
             "business-tech": "polished presentation-production visualization, crisp editable slide layers, high-resolution",
@@ -211,6 +225,11 @@ def _cover_style_for(topic: TopicBrief, channel: str) -> str:
         return (
             f"short-video production pipeline, storyboard, script page, media clips, voice waveform, "
             f"subtitle timeline, finished vertical video frames, high-resolution editorial cover, {ratio}"
+        )
+    if _contains_any(title, ["脚本变视频", "跨镜头", "连续镜头", "motion video", "AI-generated frames", "style consistency", "Openstory"]):
+        return (
+            f"story-to-video production pipeline, screenplay breaking into cinematic frames, "
+            f"one consistent character and location across scenes, motion and audio layers, high-resolution editorial cover, {ratio}"
         )
     if _contains_any(title, ["PPT", "PPTX", "演示文稿", "编辑控制台", "Dashi"]):
         return (
