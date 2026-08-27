@@ -28,6 +28,7 @@ class ContentPlan:
     core_problem: str = ""
     core_outcome: str = ""
     value_keywords: list[str] = field(default_factory=list)
+    value_proposition: str = ""
 
 
 def build_content_plan(topic: TopicBrief, prompt: str = "") -> ContentPlan:
@@ -299,6 +300,7 @@ def _is_agent_framework(text: str) -> bool:
 def _build_github_project_plan(text: str, url: str | None) -> ContentPlan:
     project_name = _github_project_name(text, url) or "这个开源项目"
     project_label = _github_project_label(project_name)
+    value_proposition = _extract_project_value_proposition(text, project_label)
     common = {
         "content_type": "github_project_share",
         "project_name": project_name,
@@ -501,6 +503,45 @@ def _build_github_project_plan(text: str, url: str | None) -> ContentPlan:
             core_outcome="让目标、上下文和执行过程更稳定地持续推进",
             value_keywords=["Agent", "长期", "任务", "上下文", "工作流", "数字员工", "插件"],
         )
+    if value_proposition:
+        value_keywords = _project_value_keywords(value_proposition, project_label)
+        return ContentPlan(
+            **common,
+            project_kind="general_project",
+            reader_hook=f"读者想实现“{value_proposition}”，但很难仅凭项目名判断它的真实能力和使用成本",
+            article_promise=f"基于 README 讲清项目如何实现“{value_proposition}”、需要提供什么，以及最终能得到什么。",
+            title_angles=[
+                value_proposition,
+                f"{project_label}：{value_proposition}",
+                f"这个开源工具，想把“{value_proposition}”做成一条完整流程",
+            ],
+            title_rules=[
+                "标题优先使用 README 已明确写出的核心价值、目标用户或具体产出，不改写成泛泛的项目评测。",
+                "保留最有辨识度的结果词和数字，不暴露 URL、README、仓库路径或技术栈。",
+            ],
+            opening_rule=f"开头从“{value_proposition}”对应的真实需求切入，不从项目链接、技术栈或是否值得试写起。",
+            section_flow=[
+                "真实需求：谁会需要 README 描述的这个结果。",
+                "一句话定位：项目替用户完成什么任务，而不只是列功能名。",
+                "输入与产出：用户需要提供什么，最终会得到什么。",
+                "核心流程：关键步骤如何衔接，哪些环节仍需人工判断。",
+                "适用场景：README 明确列出的使用人群和内容场景。",
+                "成本与边界：模型、部署、素材、版权和成品质量限制。",
+                "项目地址：只在文末出现一次。",
+            ],
+            ending_rule="结尾用一个最小真实案例说明如何验证核心产出，再给出是否采用的判断标准。",
+            structure="结构：真实需求 -> 一句话定位 -> 输入与产出 -> 核心流程 -> 适用场景 -> 成本与边界 -> 项目地址。",
+            cover_scene=f"vivid editorial visualization of the README's concrete user outcome: {value_proposition}",
+            cover_subject=f"the people, action and finished result described by this value proposition: {value_proposition}",
+            cover_negative=(
+                "generic office desk, generic laptop hero shot, circuit board, raw URL text, GitHub screenshot, "
+                "unreadable interface text, recognizable copyrighted characters, trademarked mascots"
+            ),
+            core_problem="用户难以从项目名判断它解决的具体问题",
+            core_outcome=value_proposition,
+            value_keywords=value_keywords,
+            value_proposition=value_proposition,
+        )
     return ContentPlan(
         **common,
         project_kind="general_project",
@@ -519,6 +560,51 @@ def _build_github_project_plan(text: str, url: str | None) -> ContentPlan:
         core_outcome="看懂项目定位、核心能力、使用门槛和适用人群",
         value_keywords=[project_label, "核心能力", "使用", "适用"],
     )
+
+
+def _extract_project_value_proposition(text: str, project_label: str) -> str:
+    clean = strip_urls(text)
+    clean = re.sub(r"[#>*`]+", " ", clean)
+    segments = [
+        re.sub(r"\s+", " ", segment).strip(" -_｜丨：:（）()[]【】\"'“”")
+        for segment in re.split(r"[。！？!?；;\n]+", clean)
+    ]
+    scored: list[tuple[int, int, str]] = []
+    for index, segment in enumerate(segments):
+        if not 10 <= len(segment) <= 46:
+            continue
+        lower = segment.lower()
+        if any(term in lower for term in ["github 开源项目", "http", "安装", "依赖", "license", "许可证", "目录"]):
+            continue
+        action_hits = sum(term in segment for term in ["生成", "定制", "制作", "变成", "导出", "管理", "监控", "发布", "创建", "完成", "转换"])
+        outcome_hits = sum(
+            term in segment
+            for term in [
+                "视频", "动画", "大片", "祝福", "脚本", "分镜", "配音", "成片", "PPT", "PPTX",
+                "演示文稿", "图片", "音频", "文章", "面板", "工作流", "知识库", "应用", "报告",
+            ]
+        )
+        audience_hits = sum(term in segment for term in ["孩子", "宝贝", "家长", "创作者", "用户", "团队", "开发者", "职场"])
+        concrete_hits = int(bool(re.search(r"\d+\s*(?:秒|分钟|步|个|种|页)", segment)))
+        proposition_pattern = int(bool(re.search(r"(?:用|为|让|把|只需输入|输入).{2,}(?:生成|定制|制作|变成|导出|完成)", segment)))
+        score = action_hits * 6 + outcome_hits * 5 + audience_hits * 3 + concrete_hits * 8 + proposition_pattern * 10
+        if project_label and project_label.lower() in lower and action_hits == 0:
+            score -= 8
+        if score >= 16:
+            scored.append((score, -index, segment))
+    if not scored:
+        return ""
+    proposition = max(scored)[2]
+    proposition = re.sub(r"^(?:一款|这是一个|这是款)\s*", "", proposition)
+    return proposition.strip(" ，,。；;：:")
+
+
+def _project_value_keywords(value_proposition: str, project_label: str) -> list[str]:
+    vocabulary = [
+        "孩子", "宝贝", "生日", "家长", "创作者", "30 秒", "定格", "折纸", "动画", "祝福", "照片", "分镜", "配音",
+        "视频", "短视频", "脚本", "成片", "PPT", "PPTX", "可编辑", "导出", "面板", "监控", "发布", "工作流", "知识库",
+    ]
+    return [project_label, *(term for term in vocabulary if term.lower() in value_proposition.lower())]
 
 
 def _github_project_name(text: str, url: str | None) -> str:

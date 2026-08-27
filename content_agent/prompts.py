@@ -210,6 +210,10 @@ def apply_cover_style(base_style: str, cover_style: str = "business-tech") -> st
 def _cover_style_for(topic: TopicBrief, channel: str) -> str:
     title = f"{topic.title} {topic.optimized_title} {topic.angle} {topic.source_summary}"
     ratio = "3:4 vertical social cover" if channel == "xiaohongshu" else "16:9 wide cover"
+    plan = build_content_plan(topic)
+
+    if plan.content_type == "github_project_share" and plan.project_kind == "general_project" and plan.value_proposition:
+        return f"{plan.cover_scene}, high-resolution editorial cover, {ratio}"
 
     if _contains_any(title, ["Obsidian", "个人知识库", "第二大脑", "双向链接", "知识工作流"]):
         return (
@@ -236,7 +240,7 @@ def _cover_style_for(topic: TopicBrief, channel: str) -> str:
             f"editable presentation workflow, document transforming into polished editable slides, "
             f"layout controls, color adjustments, PPTX export, high-resolution editorial cover, {ratio}"
         )
-    if _contains_any(title, ["GitHub 开源项目", "开源项目", "Agent", "智能体", "数字员工", "工作系统"]):
+    if plan.project_kind == "agent_framework" or _contains_any(title, ["Agent", "智能体", "数字员工", "工作系统"]):
         return (
             f"open-source agent system, abstract workflow nodes, automation timeline, "
             f"connected task graph, clean technical interface, high-resolution editorial cover, {ratio}"

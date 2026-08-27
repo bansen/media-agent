@@ -279,6 +279,7 @@ def _clean_readme_content(value: str) -> str:
     useful_lines: list[str] = []
     for raw_line in value.splitlines():
         line = raw_line.strip()
+        is_heading = bool(re.match(r"^#{1,6}\s+", line))
         lower = line.lower()
         if not line:
             continue
@@ -295,6 +296,8 @@ def _clean_readme_content(value: str) -> str:
         line = re.sub(r"^[-*+]\s+", "", line)
         line = re.sub(r"\s+", " ", line).strip()
         if line:
+            if is_heading and not re.search(r"[。！？!?；;：:]$", line):
+                line += "。"
             useful_lines.append(line)
     return _clean_text(" ".join(useful_lines))
 

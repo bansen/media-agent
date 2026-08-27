@@ -224,6 +224,10 @@ def _score_title(
         score -= 8
     if any(term in title for term in ["是什么", "真实问题", "值得关注吗", "准备试", "适不适合你", "先看懂这 3 点"]):
         score -= 18
+    if plan and plan.value_proposition and title == plan.value_proposition:
+        score += 40
+    if plan and plan.value_proposition and any(term in title for term in ["值不值得试", "核心场景", "使用门槛", "实际价值在这里"]):
+        score -= 40
     value_keywords = list(getattr(plan, "value_keywords", []) or [])
     if value_keywords:
         value_hits = sum(1 for term in value_keywords if term and term.lower() in title.lower())

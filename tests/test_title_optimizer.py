@@ -364,6 +364,42 @@ class TitleOptimizerTests(unittest.TestCase):
         self.assertIn("多平台内容运营工具解读", result.topics[0].angle)
         self.assertIn("作品监控", result.topics[0].angle)
 
+    def test_github_project_title_prioritizes_readme_value_proposition(self):
+        result = run_keyword_workflow(
+            "https://github.com/kaomei/kid-papercraft/blob/main/README.md 分享",
+            candidates=[
+                CandidateContent(
+                    title="GitHub 开源项目：kaomei/kid-papercraft - Kid Papercraft",
+                    source="websearch_mcp",
+                    url="https://github.com/kaomei/kid-papercraft/blob/main/README.md",
+                    heat=92,
+                    interaction=88,
+                    hook=84,
+                    pain=80,
+                    reuse=92,
+                    material=96,
+                    summary=(
+                        "Kid Papercraft（萌宝纸艺生日祝福生成器）。"
+                        "用热门动画英雄，为孩子定制 30 秒充满温度与魔法的定格折纸生日大片。"
+                        "一款面向创作者与家长的开源 AI Skill。只需输入宝贝的名字、年龄、照片或外貌特征，"
+                        "即可生成三段式经典定格动画分镜提示词与中文角色配音脚本。"
+                    ),
+                )
+            ],
+            primary_channel="wechat",
+        )
+
+        title = result.topics[0].optimized_title
+        self.assertTrue(any(term in title for term in ["孩子", "宝贝", "生日"]))
+        self.assertTrue(any(term in title for term in ["30 秒", "定格", "动画", "祝福"]))
+        self.assertNotIn("值不值得试", title)
+        self.assertNotIn("核心场景", title)
+        self.assertNotIn("使用门槛", title)
+        self.assertTrue(any("生日" in str(item["title"]) for item in result.topics[0].title_candidates))
+        self.assertIn("生日", result.cover_prompt)
+        self.assertNotIn("open-source agent system", result.cover_prompt)
+        self.assertNotIn("connected task graph", result.cover_prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

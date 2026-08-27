@@ -119,6 +119,31 @@ class WebSearchMCPTests(unittest.TestCase):
         self.assertIn("导出可编辑 PPTX", candidates[0].summary)
         self.assertNotIn("img.shields.io", candidates[0].summary)
 
+    def test_readme_headings_remain_separable_for_core_value_title(self):
+        github_url = "https://github.com/kaomei/kid-papercraft/blob/main/README.md"
+        runner = FakeMCPRunner(
+            {
+                "results": [
+                    {
+                        "content": (
+                            "# Kid Papercraft (萌宝纸艺生日祝福生成器)\n"
+                            "### 用热门动画英雄，为孩子定制 30 秒充满温度与魔法的定格折纸生日大片\n"
+                            "一款面向创作者与家长的开源 AI Skill。只需输入宝贝的名字、年龄、照片或外貌特征，"
+                            "即可生成三段式经典定格动画分镜提示词与中文角色配音脚本。\n"
+                            "适用于：宝宝生日祝福定制、家庭聚会社交分享与儿童祝福视频创作。"
+                        )
+                    }
+                ]
+            }
+        )
+
+        candidates = collect_websearch_mcp_candidates(github_url + " 分享", runner=runner)
+        result = run_keyword_workflow(github_url + " 分享", candidates=candidates)
+
+        self.assertIn("为孩子定制 30 秒", candidates[0].summary)
+        self.assertIn("用热门动画英雄，为孩子定制 30 秒", result.topics[0].optimized_title)
+        self.assertNotIn("值不值得试", result.topics[0].optimized_title)
+
     def test_mcp_extract_rejects_github_readme_navigation_shell(self):
         github_url = "https://github.com/3441293738/creatorhub/blob/main/README.md"
         runner = FakeMCPRunner(
