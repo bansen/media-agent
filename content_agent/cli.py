@@ -12,6 +12,7 @@ from .cover_generation import generate_cover_image
 from .formatters.wechat_gzh import format_wechat_markdown, write_gzh_outputs
 from .generation import generate_llm_drafts
 from .keyword_seed import build_keyword_seed_candidates
+from .llm_content_planner import apply_llm_content_plan, generate_llm_content_plan
 from .wechat_publish import publish_wechat_draft
 from .workflow import run_keyword_workflow
 
@@ -58,12 +59,19 @@ def main(argv: list[str] | None = None) -> int:
         candidates=candidates,
         primary_channel=args.channel,
     )
-    payload = _to_jsonable(result)
+    llm = None
     if args.use_llm:
         config = AgentConfig.from_env_file()
         _progress("Loaded config")
+        llm = config.build_llm_provider()
+        _progress("Generating content plan and Chinese titles with LLM")
+        content_plan = generate_llm_content_plan(llm, result, channel=args.channel)
+        result = apply_llm_content_plan(result, content_plan, channel=args.channel)
+        _progress("Finished LLM content planning")
+    payload = _to_jsonable(result)
+    if args.use_llm:
         _progress("Starting LLM draft generation")
-        payload["llm_drafts"] = generate_llm_drafts(result, config.build_llm_provider(), progress=_progress)
+        payload["llm_drafts"] = generate_llm_drafts(result, llm, progress=_progress)
         _progress("Finished LLM draft generation")
     formatted_html = None
     if args.wechat_content_html:

@@ -45,6 +45,7 @@ from .database import (
 from .formatters.wechat_gzh import format_wechat_markdown, theme_label, write_gzh_outputs
 from .generation import generate_llm_drafts
 from .keyword_seed import build_keyword_seed_candidates
+from .llm_content_planner import apply_llm_content_plan, generate_llm_content_plan
 from .models import TopicBrief, TopicScore, WorkflowResult
 from .prompts import COVER_STYLE_GUIDANCE, apply_cover_style
 from .wechat_publish import publish_wechat_draft
@@ -471,15 +472,22 @@ def run_agent_workflow(
         candidates = build_keyword_seed_candidates(options.keyword, options.channel)
     emit("正在评分并生成选题")
     result = run_keyword_workflow(options.keyword, candidates=candidates, primary_channel=options.channel)
+    llm = None
+    if options.use_llm:
+        emit("正在读取模型配置")
+        config = AgentConfig.from_env_file()
+        llm = config.build_llm_provider()
+        emit("正在用 DeepSeek 提炼核心内容和中文标题")
+        content_plan = generate_llm_content_plan(llm, result, channel=options.channel)
+        result = apply_llm_content_plan(result, content_plan, channel=options.channel)
+        emit("内容策划和标题生成完成")
     payload = _to_jsonable(result)
     payload["cover_prompt"] = _cover_prompt_for_style(str(payload.get("cover_prompt", "")), options.cover_style)
 
     formatted_html = None
     if options.use_llm:
-        emit("正在读取模型配置")
-        config = AgentConfig.from_env_file()
         emit("正在生成正文内容")
-        payload["llm_drafts"] = generate_llm_drafts(result, config.build_llm_provider(), progress=_localized_generation_progress(emit))
+        payload["llm_drafts"] = generate_llm_drafts(result, llm, progress=_localized_generation_progress(emit))
         emit("正文内容生成完成")
 
     if options.wechat_content_html:
@@ -582,6 +590,13 @@ def run_agent_step(
             candidates = build_keyword_seed_candidates(options.keyword, options.channel)
         emit("正在评分并生成选题")
         result = run_keyword_workflow(options.keyword, candidates=candidates, primary_channel=options.channel)
+        if options.use_llm:
+            emit("正在读取模型配置")
+            llm = AgentConfig.from_env_file().build_llm_provider()
+            emit("正在用 DeepSeek 提炼核心内容和中文标题")
+            content_plan = generate_llm_content_plan(llm, result, channel=options.channel)
+            result = apply_llm_content_plan(result, content_plan, channel=options.channel)
+            emit("内容策划和标题生成完成")
         payload = _to_jsonable(result)
         payload["cover_prompt"] = _cover_prompt_for_style(str(payload.get("cover_prompt", "")), options.cover_style)
         return payload
@@ -592,10 +607,18 @@ def run_agent_step(
     if step == "content":
         emit("正在读取模型配置")
         config = AgentConfig.from_env_file()
+        llm = config.build_llm_provider()
+        workflow_result = _workflow_result_from_payload(payload)
+        if not workflow_result.content_plan:
+            emit("正在用 DeepSeek 提炼核心内容和中文标题")
+            content_plan = generate_llm_content_plan(llm, workflow_result, channel=options.channel)
+            workflow_result = apply_llm_content_plan(workflow_result, content_plan, channel=options.channel)
+            payload.update(_to_jsonable(workflow_result))
+            emit("内容策划和标题生成完成")
         emit("正在生成正文内容")
         payload["llm_drafts"] = generate_llm_drafts(
-            _workflow_result_from_payload(payload),
-            config.build_llm_provider(),
+            workflow_result,
+            llm,
             progress=_localized_generation_progress(emit),
         )
         payload.pop("xhs_layout", None)
@@ -1445,6 +1468,7 @@ def _workflow_result_from_payload(payload: dict) -> WorkflowResult:
         cover_prompt=str(payload.get("cover_prompt", "")),
         creative_brief=payload.get("creative_brief"),
         cover_strategy=dict(payload.get("cover_strategy") or {}),
+        content_plan=dict(payload.get("content_plan") or {}),
     )
 
 
@@ -2309,7 +2333,7 @@ INDEX_HTML = r"""<!doctype html>
     async function startMaterialsJob() {
       const payload = collectOptions();
       payload.step = "materials";
-      payload.use_llm = false;
+      payload.use_llm = true;
       payload.format_gzh = false;
       payload.generate_cover = false;
       await startNewJob(payload, {

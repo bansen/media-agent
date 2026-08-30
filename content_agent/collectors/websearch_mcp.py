@@ -147,7 +147,16 @@ def _extract_result_to_candidates(result: dict[str, Any], urls: list[str], limit
         if _github_raw_readme_url(url) and not _usable_github_readme(raw_content):
             raise RuntimeError("GitHub README 正文读取失败，请稍后重试或确认 README 链接可以公开访问。")
         content = _clean_readme_content(raw_content) if _github_raw_readme_url(url) else _clean_text(raw_content)
-        candidates.append(_candidate(title=_websearch_title(title, url), url=url, summary=_summary_for(title, content), rank=index, from_link=True))
+        summary_limit = 6000 if _github_raw_readme_url(url) else 1200
+        candidates.append(
+            _candidate(
+                title=_websearch_title(title, url),
+                url=url,
+                summary=_summary_for(title, content, max_chars=summary_limit),
+                rank=index,
+                from_link=True,
+            )
+        )
     return candidates
 
 
@@ -251,10 +260,10 @@ def _title_from_url(url: str) -> str:
     return re.sub(r"^https?://", "", url).strip("/") or "网页资料"
 
 
-def _summary_for(title: str, content: str) -> str:
+def _summary_for(title: str, content: str, max_chars: int = 1200) -> str:
     parts = [part for part in [title, content] if part]
     summary = "；".join(parts)
-    return summary[:1200]
+    return summary[:max_chars]
 
 
 def _normalize_url(url: str) -> str:

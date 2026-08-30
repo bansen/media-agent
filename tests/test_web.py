@@ -1,4 +1,5 @@
 import unittest
+import json
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -24,6 +25,54 @@ from content_agent.web import (
     _options_to_json,
     _asset_rows_from_result,
 )
+
+
+class TwoStageLLMProvider:
+    def __init__(self, responses: list[str]):
+        self.responses = iter(responses)
+        self.prompts = []
+
+    def generate(self, prompt: str) -> str:
+        self.prompts.append(prompt)
+        return next(self.responses)
+
+
+def _llm_plan_response() -> str:
+    return json.dumps(
+        {
+            "core_topic": "用岗位和组织结构定义可协作的 AI 智能体团队",
+            "target_audience": "多智能体开发者和小团队",
+            "pain_point": "普通多智能体示例缺少岗位职责和协作边界",
+            "core_value": "把岗位职责和协作流程变成可运行的 AI 团队",
+            "key_points": ["岗位定义", "组织关系", "交付标准"],
+            "article_structure": ["冲突开场", "岗位机制", "协作流程", "真实场景", "边界判断"],
+            "cover_concept": "多个具有明确岗位分工的 AI 角色围绕业务目标协作",
+            "titles": [
+                "Agency Agents：把岗位职责变成一支 AI 团队",
+                "多智能体不只会聊天，它把岗位关系也做进去了",
+                "想组一支 AI 团队，先给智能体写岗位说明书",
+                "把组织架构搬进 AI，多智能体终于有明确分工",
+                "AI 团队总抢活？先把每个智能体的岗位定清楚",
+            ],
+            "selected_title": "Agency Agents：把岗位职责变成一支 AI 团队",
+        },
+        ensure_ascii=False,
+    )
+
+
+def _agency_candidate() -> CandidateContent:
+    return CandidateContent(
+        title="GitHub 开源项目：msitarzewski/agency-agents - Agency Agents",
+        source="websearch_mcp",
+        url="https://github.com/msitarzewski/agency-agents/blob/main/README.md",
+        heat=92,
+        interaction=88,
+        hook=84,
+        pain=80,
+        reuse=92,
+        material=96,
+        summary="每个 AI 智能体都有明确岗位职责、组织关系、工作流程和交付标准。",
+    )
 
 
 class WebTests(unittest.TestCase):
@@ -89,6 +138,53 @@ class WebTests(unittest.TestCase):
         self.assertIn("授权公众号", html)
         self.assertNotIn('id="submitWechatDraft"', html)
         self.assertIn("index === 0 ? renderTitleLab", html)
+        self.assertIn('payload.use_llm = true;', html)
+
+    def test_one_click_uses_deepseek_for_plan_then_content(self):
+        llm = TwoStageLLMProvider([_llm_plan_response(), "# 临时标题\n\n围绕岗位职责和协作关系展开正文。"])
+        config = type("Config", (), {"build_llm_provider": lambda self: llm})()
+
+        with patch("content_agent.web._collect_candidates", return_value=[_agency_candidate()]), patch(
+            "content_agent.web.AgentConfig.from_env_file", return_value=config
+        ):
+            payload = run_agent_workflow(
+                WebRunOptions(
+                    keyword="https://github.com/msitarzewski/agency-agents/blob/main/README.md 分享",
+                    channel="wechat",
+                    use_llm=True,
+                    format_gzh=False,
+                    generate_cover=False,
+                )
+            )
+
+        self.assertEqual(len(llm.prompts), 2)
+        self.assertIn("请先做内容策划，不要写正文", llm.prompts[0])
+        self.assertIn("公众号文案创作", llm.prompts[1])
+        self.assertEqual(payload["topics"][0]["optimized_title"], "Agency Agents：把岗位职责变成一支 AI 团队")
+        self.assertEqual(payload["content_plan"]["core_value"], "把岗位职责和协作流程变成可运行的 AI 团队")
+        self.assertTrue(payload["llm_drafts"]["wechat_article"].startswith("# Agency Agents：把岗位职责变成一支 AI 团队"))
+        self.assertIn("明确岗位分工", payload["cover_prompt"])
+
+    def test_materials_step_uses_deepseek_for_title_plan(self):
+        llm = TwoStageLLMProvider([_llm_plan_response()])
+        config = type("Config", (), {"build_llm_provider": lambda self: llm})()
+
+        with patch("content_agent.web._collect_candidates", return_value=[_agency_candidate()]), patch(
+            "content_agent.web.AgentConfig.from_env_file", return_value=config
+        ):
+            payload = run_agent_step(
+                WebRunOptions(
+                    keyword="https://github.com/msitarzewski/agency-agents/blob/main/README.md 分享",
+                    channel="wechat",
+                    use_llm=True,
+                ),
+                step="materials",
+            )
+
+        self.assertEqual(len(llm.prompts), 1)
+        self.assertIn("请先做内容策划，不要写正文", llm.prompts[0])
+        self.assertEqual(payload["topics"][0]["optimized_title"], "Agency Agents：把岗位职责变成一支 AI 团队")
+        self.assertNotIn("llm_drafts", payload)
 
     def test_run_agent_workflow_exposes_creative_brief_and_title_candidates(self):
         candidate = CandidateContent(
@@ -447,6 +543,10 @@ class WebTests(unittest.TestCase):
         with patch("content_agent.web.AgentConfig.from_env_file", return_value=config), patch(
             "content_agent.web.collect_baidu_search_candidates", return_value=[candidate]
         ), patch(
+            "content_agent.web.generate_llm_content_plan", return_value=object()
+        ), patch(
+            "content_agent.web.apply_llm_content_plan", side_effect=lambda result, plan, channel: result
+        ), patch(
             "content_agent.web.generate_llm_drafts",
             return_value={"xhs_note": "标题：久坐女性的4个习惯\n\n正文：\n\n1. 喝水\n慢慢喝。\n\n标签：#健康养生"},
         ), patch("content_agent.web.generate_cover_image", return_value=generated_cover) as cover, patch(
@@ -579,6 +679,7 @@ class WebTests(unittest.TestCase):
             "wechat_outline": "",
             "xhs_package": "",
             "cover_prompt": "cover prompt",
+            "content_plan": {"core_topic": "秋季养生"},
             "xhs_layout": {"cards": [{"path": "output/old.jpg"}], "zip_path": "output/old.zip"},
         }
 
@@ -622,6 +723,7 @@ class WebTests(unittest.TestCase):
             "wechat_outline": "",
             "xhs_package": "",
             "cover_prompt": "cover prompt",
+            "content_plan": {"core_topic": "秋季养生"},
             "xhs_layout": {"cards": [{"path": "output/old.jpg"}], "zip_path": "output/old.zip"},
         }
 

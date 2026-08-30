@@ -54,3 +54,4 @@ class WorkflowResult:
     cover_prompt: str
     creative_brief: Any | None = None
     cover_strategy: dict[str, str] = field(default_factory=dict)
+    content_plan: dict[str, Any] = field(default_factory=dict)

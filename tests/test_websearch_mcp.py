@@ -95,6 +95,24 @@ class WebSearchMCPTests(unittest.TestCase):
         self.assertIn("多平台内容管理面板", candidates[0].summary)
         self.assertNotIn("Sign in", candidates[0].summary)
 
+    def test_github_readme_keeps_enough_content_for_llm_planning(self):
+        github_url = "https://github.com/example/long-project/blob/main/README.md"
+        marker = "后半段关键能力：支持桌面应用一键安装和自动更新"
+        runner = FakeMCPRunner(
+            {
+                "results": [
+                    {
+                        "content": "# Long Project\n项目介绍。\n" + ("专业智能体工作流说明。" * 180) + "\n## 核心能力\n" + marker
+                    }
+                ]
+            }
+        )
+
+        candidates = collect_websearch_mcp_candidates(github_url + " 分享", runner=runner)
+
+        self.assertGreater(len(candidates[0].summary), 1200)
+        self.assertIn(marker, candidates[0].summary)
+
     def test_mcp_extract_prioritizes_readme_description_over_badge_noise(self):
         github_url = "https://github.com/chuspeeism/dashi-ppt-skill/blob/main/README.md"
         badge = "[![GitHub stars](https://img.shields.io/badge/stars-blue)](https://example.com)"

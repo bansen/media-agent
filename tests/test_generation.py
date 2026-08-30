@@ -1,4 +1,5 @@
 import unittest
+from dataclasses import replace
 
 from content_agent.generation import generate_llm_drafts
 from content_agent.mock_data import get_mock_candidates
@@ -56,6 +57,53 @@ class GenerationTests(unittest.TestCase):
         self.assertIn("公众号", llm.prompts[0])
         self.assertIn("不要承诺日更或固定更新频率", llm.prompts[0])
 
+    def test_wechat_content_uses_persisted_llm_plan_and_wechat_skill(self):
+        result = run_keyword_workflow(
+            "https://github.com/msitarzewski/agency-agents/blob/main/README.md 分享",
+            [
+                CandidateContent(
+                    title="GitHub 开源项目：msitarzewski/agency-agents - Agency Agents",
+                    source="websearch_mcp",
+                    url="https://github.com/msitarzewski/agency-agents/blob/main/README.md",
+                    heat=92,
+                    interaction=88,
+                    hook=84,
+                    pain=80,
+                    reuse=92,
+                    material=96,
+                    summary="每个 AI 智能体都有明确岗位职责、协作关系和交付标准。",
+                )
+            ],
+        )
+        selected_title = "Agency Agents：把岗位职责变成一支 AI 团队"
+        topic = replace(result.topics[0], optimized_title=selected_title)
+        result = replace(
+            result,
+            topics=[topic],
+            content_plan={
+                "core_topic": "用岗位和组织结构定义 AI 团队",
+                "target_audience": "多智能体开发者和小团队",
+                "pain_point": "多智能体缺少岗位职责和协作边界",
+                "core_value": "把岗位职责和协作流程变成可运行的 AI 团队",
+                "key_points": ["岗位定义", "组织关系", "交付标准"],
+                "article_structure": ["冲突开场", "岗位机制", "协作流程", "使用场景", "边界判断"],
+                "cover_concept": "具有明确岗位分工的 AI 团队协作",
+                "titles": [selected_title],
+                "selected_title": selected_title,
+            },
+        )
+        llm = FakeLLMProvider("# 临时标题\n\n正文")
+
+        drafts = generate_llm_drafts(result, llm)
+
+        prompt = llm.prompts[0]
+        self.assertIn("公众号文案创作", prompt)
+        self.assertIn("把岗位职责和协作流程变成可运行的 AI 团队", prompt)
+        self.assertIn("冲突开场 -> 岗位机制 -> 协作流程 -> 使用场景 -> 边界判断", prompt)
+        self.assertIn("内容策划是事实与结构的唯一主线", prompt)
+        self.assertIn("不要询问用户上传风格", prompt)
+        self.assertTrue(drafts["wechat_article"].startswith(f"# {selected_title}"))
+
     def test_generates_only_xhs_note_for_xiaohongshu_channel(self):
         result = run_keyword_workflow("养生", get_mock_candidates("养生", channel="xiaohongshu"), primary_channel="xiaohongshu")
         llm = FakeLLMProvider()
@@ -72,6 +120,47 @@ class GenerationTests(unittest.TestCase):
         self.assertIn("Exclude layout instructions", llm.prompts[0])
         self.assertIn("输出只包含标题、正文、标签", llm.prompts[0])
         self.assertIn("不要输出封面图组", llm.prompts[0])
+
+    def test_xhs_content_uses_llm_plan_and_keeps_selected_title(self):
+        result = run_keyword_workflow(
+            "帮多智能体开发者介绍 Agency Agents",
+            [
+                CandidateContent(
+                    title="Agency Agents 专业智能体角色库",
+                    source="websearch_mcp",
+                    url="https://example.com/agency-agents",
+                    heat=90,
+                    interaction=86,
+                    hook=84,
+                    pain=80,
+                    reuse=90,
+                    material=94,
+                    summary="每个智能体都有明确岗位职责、组织关系和交付标准。",
+                )
+            ],
+            primary_channel="xiaohongshu",
+        )
+        selected_title = "AI 团队先把岗位分清楚"
+        result = replace(
+            result,
+            topics=[replace(result.topics[0], optimized_title=selected_title)],
+            content_plan={
+                "core_topic": "岗位化 AI 团队",
+                "target_audience": "多智能体开发者",
+                "pain_point": "智能体协作时职责混乱",
+                "core_value": "用岗位职责和组织关系约束智能体协作",
+                "key_points": ["岗位定义", "组织关系", "交付标准"],
+                "article_structure": ["痛点", "机制", "场景", "边界"],
+                "selected_title": selected_title,
+            },
+        )
+        llm = FakeLLMProvider("标题：另一个标题\n\n正文：岗位分工很重要。\n\n标签：#AI")
+
+        drafts = generate_llm_drafts(result, llm)
+
+        self.assertIn("用岗位职责和组织关系约束智能体协作", llm.prompts[0])
+        self.assertIn("痛点 -> 机制 -> 场景 -> 边界", llm.prompts[0])
+        self.assertTrue(drafts["xhs_note"].startswith(f"标题：{selected_title}"))
 
     def test_wechat_prompt_locks_keyword_and_selected_material(self):
         result = run_keyword_workflow(

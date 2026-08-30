@@ -22,7 +22,76 @@ class FakeGeneratedCover:
     model: str
 
 
+class FakeTwoStageLLM:
+    def __init__(self):
+        self.prompts = []
+        self.responses = iter([_editorial_plan_json(), "# 临时标题\n\n正文内容"])
+
+    def generate(self, prompt: str) -> str:
+        self.prompts.append(prompt)
+        return next(self.responses)
+
+
+def _editorial_plan_json() -> str:
+    return json.dumps(
+        {
+            "core_topic": "用岗位定义可协作的 AI 团队",
+            "target_audience": "多智能体开发者",
+            "pain_point": "智能体缺少岗位职责和协作边界",
+            "core_value": "把岗位职责变成可运行的 AI 团队",
+            "key_points": ["岗位定义", "组织关系", "交付标准"],
+            "article_structure": ["冲突开场", "岗位机制", "协作流程", "真实场景", "边界判断"],
+            "cover_concept": "多个有明确岗位分工的 AI 角色共同协作",
+            "titles": [
+                "Agency Agents：把岗位职责变成一支 AI 团队",
+                "多智能体不只会聊天，它把岗位关系也做进去了",
+                "想组一支 AI 团队，先给智能体写岗位说明书",
+                "把组织架构搬进 AI，多智能体终于有明确分工",
+                "AI 团队总抢活？先把智能体的岗位边界定清楚",
+            ],
+            "selected_title": "Agency Agents：把岗位职责变成一支 AI 团队",
+        },
+        ensure_ascii=False,
+    )
+
+
 class ProviderCliTests(unittest.TestCase):
+    def test_cli_use_llm_generates_plan_before_article(self):
+        llm = FakeTwoStageLLM()
+        config = type("Config", (), {"build_llm_provider": lambda self: llm})()
+        candidate = CandidateContent(
+            title="GitHub 开源项目：msitarzewski/agency-agents - Agency Agents",
+            source="websearch_mcp",
+            url="https://github.com/msitarzewski/agency-agents/blob/main/README.md",
+            heat=92,
+            interaction=88,
+            hook=84,
+            pain=80,
+            reuse=92,
+            material=96,
+            summary="每个 AI 智能体都有明确岗位职责、组织关系和交付标准。",
+        )
+        stdout = io.StringIO()
+
+        with redirect_stdout(stdout), patch("content_agent.cli._collect_candidates", return_value=[candidate]), patch(
+            "content_agent.cli.AgentConfig.from_env_file", return_value=config
+        ):
+            exit_code = main(
+                [
+                    "--keyword",
+                    "https://github.com/msitarzewski/agency-agents/blob/main/README.md 分享",
+                    "--use-llm",
+                ]
+            )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(len(llm.prompts), 2)
+        self.assertIn("请先做内容策划，不要写正文", llm.prompts[0])
+        self.assertIn("公众号文案创作", llm.prompts[1])
+        self.assertEqual(payload["topics"][0]["optimized_title"], "Agency Agents：把岗位职责变成一支 AI 团队")
+        self.assertIn("content_plan", payload)
+
     def test_openai_compatible_provider_builds_deepseek_payload(self):
         provider = OpenAICompatibleLLMProvider(
             api_key="secret",

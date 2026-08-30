@@ -50,6 +50,8 @@ def generate_llm_drafts(
                 if remaining_issues:
                     raise RuntimeError("公众号正文主题校验失败：" + "；".join(remaining_issues))
             generated = _force_markdown_title(generated, topic.optimized_title)
+        elif name == "xhs_note" and result.content_plan:
+            generated = _force_xhs_title(generated, topic.optimized_title)
         drafts[name] = generated
     drafts["selected_topic"] = topic.optimized_title
     drafts["source_topic"] = topic.title
@@ -90,6 +92,7 @@ def _wechat_prompt(result: WorkflowResult) -> str:
     topic = result.topics[0]
     plan = build_content_plan(topic, result.keyword)
     opening_rule = []
+    editorial_plan = result.content_plan or {}
     if "工具接入教程" in result.wechat_outline:
         opening_rule.append("开头必须直接进入工具接入场景，第一段说明要接入什么、验证什么、读者能得到什么。")
         opening_rule.append("不要写“学 AI 做作品”、副业、面试、HR、读者投稿等泛用故事。")
@@ -118,10 +121,38 @@ def _wechat_prompt(result: WorkflowResult) -> str:
     if topic.source_summary.strip():
         material_summary.append("素材摘要：")
         material_summary.append(topic.source_summary.strip())
+    planning_context = result.wechat_outline
+    skill_context = []
+    if editorial_plan:
+        structure = " -> ".join(str(item) for item in editorial_plan.get("article_structure", []) if str(item).strip())
+        planning_context = "\n".join(
+            [
+                "DeepSeek 内容策划（事实与结构的唯一主线）：",
+                f"核心主题：{editorial_plan.get('core_topic', '')}",
+                f"目标读者：{editorial_plan.get('target_audience', '')}",
+                f"具体痛点：{editorial_plan.get('pain_point', '')}",
+                f"核心价值：{editorial_plan.get('core_value', '')}",
+                "事实要点：" + "；".join(str(item) for item in editorial_plan.get("key_points", [])),
+                f"文章结构：{structure}",
+            ]
+        )
+        opening_rule = [
+            "严格按照 DeepSeek 内容策划的文章结构推进；不得改回固定的项目定位、核心场景、使用门槛模板。",
+            "正文可以提项目名，但链接只在文末出现一次。",
+        ]
+        skill_context = [
+            "以下是必须遵循的公众号文案创作 Skill：",
+            load_content_skill("wechat-write"),
+            (
+                "本任务已完成素材读取和内容策划：跳过 Skill 中的联网查询、脚本调用和用户风格追问；"
+                "不要询问用户上传风格，不要输出推荐标题、标签、爆款公式或分析过程，只生成完整公众号正文。"
+            ),
+        ]
     return "\n\n".join(
         [
             "你是公众号内容编辑，请生成一篇可进入草稿箱的中文长文。",
-            result.wechat_outline,
+            *skill_context,
+            planning_context,
             *material_summary,
             (
                 "主题约束：必须围绕用户关键词、选中素材和推荐选题写；"
@@ -134,6 +165,7 @@ def _wechat_prompt(result: WorkflowResult) -> str:
                 "不要连续两个小节重复同一观点；每个小标题下面必须提供新的信息、判断或行动；"
                 "如果写卡片、清单或关键问题，数量必须和正文展开的点数一致。"
             ),
+            "内容策划是事实与结构的唯一主线；不得自行替换核心主题、受众、核心价值或文章结构。" if editorial_plan else "",
             (
                 "输出格式：只输出 Markdown 正文，第一行必须是 # 标题；"
                 "不要输出任何解释、确认语、分隔线、标题：、正文：、可复制到草稿箱等说明文字。"
@@ -149,6 +181,22 @@ def _xhs_prompt(result: WorkflowResult) -> str:
     material = [f"选中素材：{topic.title}"]
     if topic.source_summary.strip():
         material.extend(["素材摘要：", topic.source_summary.strip()])
+    package = result.xhs_package
+    editorial_plan = result.content_plan or {}
+    if editorial_plan:
+        structure = " -> ".join(str(item) for item in editorial_plan.get("article_structure", []) if str(item).strip())
+        material.extend(
+            [
+                "DeepSeek 内容策划（事实与结构的唯一主线）：",
+                f"核心主题：{editorial_plan.get('core_topic', '')}",
+                f"目标读者：{editorial_plan.get('target_audience', '')}",
+                f"具体痛点：{editorial_plan.get('pain_point', '')}",
+                f"核心价值：{editorial_plan.get('core_value', '')}",
+                "事实要点：" + "；".join(str(item) for item in editorial_plan.get("key_points", [])),
+                f"文章结构：{structure}",
+            ]
+        )
+        package = f"小红书标题：{topic.optimized_title}\n必须围绕上述策划生成正文和标签，不得重新选择主题或标题。"
     return "\n\n".join(
         [
             "你是小红书图文笔记编辑，请生成适合手动发布的小红书内容。",
@@ -157,10 +205,21 @@ def _xhs_prompt(result: WorkflowResult) -> str:
             "以下是后续图文排版必须遵循的 Skill，请让正文编号结构可被逐点排版：",
             load_content_skill("xiaohongshu_layout"),
             *material,
-            result.xhs_package,
+            package,
             "要求：标题 20 字内；正文生活化；包含标签；健康内容禁止诊断和治疗承诺；输出只包含标题、正文、标签，不要输出封面图组或排版说明；正文主要方法使用连续编号。",
         ]
     )
+
+
+def _force_xhs_title(note: str, title: str) -> str:
+    clean_title = title.strip()
+    stripped = note.strip()
+    if not clean_title:
+        return stripped
+    forced = f"标题：{clean_title}"
+    if re.match(r"^标题\s*[:：]", stripped):
+        return re.sub(r"^标题\s*[:：].*(?:\n|$)", forced + "\n", stripped, count=1)
+    return f"{forced}\n\n{stripped}"
 
 
 def _force_markdown_title(markdown: str, title: str) -> str:
