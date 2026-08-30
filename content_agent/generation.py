@@ -20,7 +20,7 @@ def generate_llm_drafts(
     progress: Callable[[str], None] | None = None,
 ) -> dict[str, str]:
     topic = result.topics[0]
-    plan = build_content_plan(topic, result.keyword)
+    legacy_plan = None if result.content_plan else build_content_plan(topic, result.keyword)
     channel = _result_channel(result)
     prompts = {}
     if channel == "xiaohongshu":
@@ -33,7 +33,7 @@ def generate_llm_drafts(
             progress(f"Generating {name} with LLM")
         generated = llm.generate(prompt)
         if name == "wechat_article":
-            issues = _wechat_alignment_issues(generated, plan)
+            issues = _wechat_alignment_issues(generated, legacy_plan) if legacy_plan else []
             if issues:
                 if progress:
                     progress("Rewriting off-topic WeChat draft")
@@ -46,7 +46,7 @@ def generate_llm_drafts(
                     ]
                 )
                 generated = llm.generate(correction_prompt)
-                remaining_issues = _wechat_alignment_issues(generated, plan)
+                remaining_issues = _wechat_alignment_issues(generated, legacy_plan)
                 if remaining_issues:
                     raise RuntimeError("公众号正文主题校验失败：" + "；".join(remaining_issues))
             generated = _force_markdown_title(generated, topic.optimized_title)

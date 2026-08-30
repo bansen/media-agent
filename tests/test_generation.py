@@ -104,6 +104,48 @@ class GenerationTests(unittest.TestCase):
         self.assertIn("不要询问用户上传风格", prompt)
         self.assertTrue(drafts["wechat_article"].startswith(f"# {selected_title}"))
 
+    def test_wechat_content_plan_is_not_rejected_by_legacy_video_template(self):
+        result = run_keyword_workflow(
+            "在 Codex 里调用云端 GPU 生成 MiniMax H3 视频",
+            [
+                CandidateContent(
+                    title="从视频脚本到短视频生成的云端 GPU 工作流",
+                    source="websearch_mcp",
+                    url="https://github.com/example/cloud-video/blob/main/README.md",
+                    heat=90,
+                    interaction=86,
+                    hook=84,
+                    pain=82,
+                    reuse=88,
+                    material=92,
+                    summary="支持视频脚本和视频生成，并在任务结束后自动关闭云端 GPU。",
+                )
+            ],
+        )
+        selected_title = "Codex 调云端 GPU 跑 H3，结束自动关机"
+        result = replace(
+            result,
+            topics=[replace(result.topics[0], optimized_title=selected_title)],
+            content_plan={
+                "core_topic": "Codex 调用云端 GPU 运行 MiniMax H3",
+                "target_audience": "需要按需使用云端算力的视频创作者",
+                "pain_point": "云端 GPU 闲置时仍持续计费",
+                "core_value": "视频生成结束后自动关闭实例以控制成本",
+                "key_points": ["Codex 发起任务", "云端 GPU 运行 H3", "任务结束自动关机"],
+                "article_structure": ["成本痛点", "工作原理", "执行流程", "风险边界"],
+                "selected_title": selected_title,
+            },
+        )
+        llm = FakeLLMProvider(
+            "# 临时标题\n\nCodex 可以发起云端任务，由 GPU 运行 MiniMax H3。"
+            "视频生成完成后自动关闭实例，避免闲置计费。"
+        )
+
+        drafts = generate_llm_drafts(result, llm)
+
+        self.assertEqual(len(llm.prompts), 1)
+        self.assertIn("自动关闭实例", drafts["wechat_article"])
+
     def test_generates_only_xhs_note_for_xiaohongshu_channel(self):
         result = run_keyword_workflow("养生", get_mock_candidates("养生", channel="xiaohongshu"), primary_channel="xiaohongshu")
         llm = FakeLLMProvider()

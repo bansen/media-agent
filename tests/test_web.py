@@ -24,6 +24,7 @@ from content_agent.web import (
     _options_from_json,
     _options_to_json,
     _asset_rows_from_result,
+    _localized_generation_progress,
 )
 
 
@@ -76,6 +77,13 @@ def _agency_candidate() -> CandidateContent:
 
 
 class WebTests(unittest.TestCase):
+    def test_localizes_wechat_rewrite_progress(self):
+        events = []
+
+        _localized_generation_progress(events.append)("Rewriting off-topic WeChat draft")
+
+        self.assertEqual(events, ["正在根据主题重新生成公众号正文"])
+
     def test_index_html_contains_workbench_controls(self):
         html = render_index_html()
 

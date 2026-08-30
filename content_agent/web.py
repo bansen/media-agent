@@ -1361,6 +1361,7 @@ def _localized_generation_progress(emit: Callable[[str], None]) -> Callable[[str
     labels = {
         "Generating wechat_article with LLM": "正在生成公众号正文",
         "Generating xhs_note with LLM": "正在生成小红书笔记",
+        "Rewriting off-topic WeChat draft": "正在根据主题重新生成公众号正文",
     }
 
     def _emit(message: str) -> None:
