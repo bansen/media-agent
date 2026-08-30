@@ -104,6 +104,17 @@ class LLMContentPlannerTests(unittest.TestCase):
         self.assertIn("模板化禁用词", llm.prompts[1])
         self.assertIn("重新输出完整 JSON", llm.prompts[1])
 
+    def test_discards_overlong_selected_title_when_valid_candidates_exist(self):
+        result = _workflow_result()
+        overlong_title = "在 Codex 里用云端 GPU 生成 MiniMax H3 视频，自动关机省成本"
+        llm = FakeLLMProvider(_response(overlong_title))
+
+        plan = generate_llm_content_plan(llm, result, channel="wechat")
+
+        self.assertEqual(plan.selected_title, "多智能体不只会聊天，它把岗位和汇报关系也做进去了")
+        self.assertNotIn(overlong_title, plan.titles)
+        self.assertEqual(len(llm.prompts), 1)
+
     def test_applies_llm_title_and_plan_to_outline_and_cover(self):
         result = _workflow_result()
         plan = generate_llm_content_plan(FakeLLMProvider(_response()), result, channel="wechat")

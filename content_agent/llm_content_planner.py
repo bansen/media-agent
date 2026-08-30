@@ -71,12 +71,21 @@ def parse_llm_content_plan(response: str, channel: ContentChannel) -> LLMEditori
             raise ValueError(f"DeepSeek 内容策划缺少字段：{field_name}")
     key_points = _string_list(payload.get("key_points"), "key_points", minimum=3)
     article_structure = _string_list(payload.get("article_structure"), "article_structure", minimum=4)
-    titles = _string_list(payload.get("titles"), "titles", minimum=5)
+    raw_titles = _string_list(payload.get("titles"), "titles", minimum=5)
     selected_title = str(payload["selected_title"]).strip()
-    if selected_title not in titles:
+    if selected_title not in raw_titles:
         raise ValueError("DeepSeek 最佳标题必须存在于候选标题中")
-    for title in titles:
+    titles = []
+    for title in raw_titles:
+        if _title_is_overlong(title, channel):
+            continue
         _validate_title(title, channel)
+        titles.append(title)
+    if not titles:
+        title_limit = _title_limit(channel)
+        raise ValueError(f"DeepSeek 返回的所有标题都超过 {title_limit} 个字符")
+    if selected_title not in titles:
+        selected_title = titles[0]
     return LLMEditorialPlan(
         core_topic=str(payload["core_topic"]).strip(),
         target_audience=str(payload["target_audience"]).strip(),
@@ -189,6 +198,14 @@ def _validate_title(title: str, channel: ContentChannel) -> None:
     forbidden = next((term for term in FORBIDDEN_TITLE_TERMS if term.lower() in title.lower()), "")
     if forbidden:
         raise ValueError(f"DeepSeek 标题包含模板化禁用词“{forbidden}”：{title}")
-    title_limit = 20 if channel == "xiaohongshu" else 34
+    title_limit = _title_limit(channel)
     if len(title) > title_limit:
         raise ValueError(f"DeepSeek 标题超过 {title_limit} 个字符：{title}")
+
+
+def _title_is_overlong(title: str, channel: ContentChannel) -> bool:
+    return len(title) > _title_limit(channel)
+
+
+def _title_limit(channel: ContentChannel) -> int:
+    return 20 if channel == "xiaohongshu" else 34
