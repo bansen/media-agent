@@ -152,6 +152,20 @@ DATABASE_URL=postgresql+psycopg://media_agent:media_agent_change_me@db:5432/medi
 
 Change `POSTGRES_PASSWORD` and `DATABASE_URL` together in `.env.production`.
 
+### Single-owner login without WeChat Open Platform
+
+For a personal deployment that already stores one official account in `.env.production`, use a separate administrator password to enter the workbench. The official-account AppID and AppSecret stay on the server and are imported after login; they are never rendered into the login page.
+
+```env
+OWNER_LOGIN_PASSWORD=use-a-long-random-password
+OWNER_DISPLAY_NAME=server-owner
+WECHAT_APP_ID=
+WECHAT_APP_SECRET=
+WECHAT_ACCESS_TOKEN=
+```
+
+Generate a password with `openssl rand -hex 24`, recreate the app container, then open `/auth/owner`. This mode is intended for one owner. Keep website OAuth or another user identity system for future multi-user access.
+
 ### WeChat Login vs Official Account Authorization
 
 There are two separate WeChat flows:

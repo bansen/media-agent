@@ -1,10 +1,12 @@
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from urllib import parse
 
 from content_agent.auth import (
     AuthStore,
+    ServerOwnerConfig,
     WeChatComponentConfig,
     WeChatComponentProvider,
     WeChatLoginConfig,
@@ -15,6 +17,60 @@ from content_agent.database import build_engine, init_schema, session_factory
 
 
 class AuthTests(unittest.TestCase):
+    def test_server_owner_config_authenticates_without_exposing_wechat_credentials(self):
+        values = {
+            "OWNER_LOGIN_PASSWORD": "a-long-owner-password",
+            "OWNER_DISPLAY_NAME": "班森",
+            "WECHAT_APP_ID": "wx-server-app",
+            "WECHAT_APP_SECRET": "server-secret",
+            "WECHAT_ACCESS_TOKEN": "server-token",
+        }
+
+        with patch.dict("os.environ", values, clear=True):
+            config = ServerOwnerConfig.from_env()
+
+        self.assertTrue(config.is_configured())
+        self.assertTrue(config.authenticate("a-long-owner-password"))
+        self.assertFalse(config.authenticate("wrong-password"))
+        self.assertEqual(config.display_name, "班森")
+        self.assertEqual(config.wechat_app_id, "wx-server-app")
+
+    def test_server_owner_config_requires_login_password_and_wechat_credentials(self):
+        with patch.dict("os.environ", {"WECHAT_APP_ID": "wx-server-app"}, clear=True):
+            config = ServerOwnerConfig.from_env()
+
+        self.assertFalse(config.is_configured())
+        self.assertFalse(config.authenticate(""))
+
+    def test_auth_store_creates_owner_session_from_server_wechat_config(self):
+        store = _auth_store()
+        config = ServerOwnerConfig(
+            login_password="owner-password-1234",
+            display_name="班森",
+            wechat_app_id="wx-server-app",
+            wechat_app_secret="server-secret",
+            wechat_access_token="server-token",
+        )
+
+        session_token = store.create_server_owner_session(config, "owner-password-1234")
+        user = store.user_for_session(session_token)
+        account = store.manual_wechat_account_for_user(user["id"])
+
+        self.assertEqual(user["display_name"], "班森")
+        self.assertEqual(account["app_id"], "wx-server-app")
+        self.assertEqual(account["app_secret"], "server-secret")
+
+    def test_auth_store_rejects_wrong_server_owner_password(self):
+        store = _auth_store()
+        config = ServerOwnerConfig(
+            login_password="owner-password-1234",
+            wechat_app_id="wx-server-app",
+            wechat_app_secret="server-secret",
+        )
+
+        with self.assertRaisesRegex(ValueError, "管理员密码不正确"):
+            store.create_server_owner_session(config, "wrong-password")
+
     def test_wechat_oauth_provider_builds_qrconnect_url(self):
         provider = WeChatOAuthProvider(
             WeChatLoginConfig(

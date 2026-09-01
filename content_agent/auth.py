@@ -5,6 +5,7 @@ import os
 import secrets
 import base64
 import hashlib
+import hmac
 import struct
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
@@ -19,6 +20,33 @@ from .database import ComponentStateRow, ExternalAuthAccountRow, OAuthStateRow, 
 
 
 SESSION_COOKIE = "media_agent_session"
+
+
+@dataclass(frozen=True)
+class ServerOwnerConfig:
+    login_password: str = ""
+    display_name: str = "服务器管理员"
+    wechat_app_id: str = ""
+    wechat_app_secret: str = ""
+    wechat_access_token: str = ""
+
+    @classmethod
+    def from_env(cls) -> "ServerOwnerConfig":
+        return cls(
+            login_password=os.environ.get("OWNER_LOGIN_PASSWORD", "") or _read_env_value("OWNER_LOGIN_PASSWORD"),
+            display_name=os.environ.get("OWNER_DISPLAY_NAME", "")
+            or _read_env_value("OWNER_DISPLAY_NAME")
+            or "服务器管理员",
+            wechat_app_id=os.environ.get("WECHAT_APP_ID", "") or _read_env_value("WECHAT_APP_ID"),
+            wechat_app_secret=os.environ.get("WECHAT_APP_SECRET", "") or _read_env_value("WECHAT_APP_SECRET"),
+            wechat_access_token=os.environ.get("WECHAT_ACCESS_TOKEN", "") or _read_env_value("WECHAT_ACCESS_TOKEN"),
+        )
+
+    def is_configured(self) -> bool:
+        return bool(len(self.login_password) >= 16 and self.wechat_app_id and self.wechat_app_secret)
+
+    def authenticate(self, password: str) -> bool:
+        return bool(self.is_configured() and hmac.compare_digest(self.login_password, password))
 
 
 @dataclass(frozen=True)
@@ -219,6 +247,19 @@ class AuthUser:
 class AuthStore:
     def __init__(self, session_factory: sessionmaker):
         self._session_factory = session_factory
+
+    def create_server_owner_session(self, config: ServerOwnerConfig, password: str) -> str:
+        if not config.is_configured():
+            raise RuntimeError("服务器管理员登录尚未配置")
+        if not config.authenticate(password):
+            raise ValueError("管理员密码不正确")
+        user = self.create_manual_wechat_user(
+            display_name=config.display_name,
+            app_id=config.wechat_app_id,
+            app_secret=config.wechat_app_secret,
+            access_token=config.wechat_access_token,
+        )
+        return self.create_session(user.id)
 
     def create_oauth_state(self, provider: str, next_path: str = "/app", ttl_seconds: int = 600) -> str:
         now = time()

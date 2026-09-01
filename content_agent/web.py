@@ -19,6 +19,7 @@ from sqlalchemy import select
 from .auth import (
     SESSION_COOKIE,
     AuthStore,
+    ServerOwnerConfig,
     WeChatComponentConfig,
     WeChatComponentProvider,
     WeChatLoginConfig,
@@ -823,6 +824,10 @@ class ContentAgentHandler(BaseHTTPRequestHandler):
         if parsed.path == "/auth/wechat/callback":
             self._finish_wechat_auth(parsed.query)
             return
+        if parsed.path == "/auth/owner":
+            config = ServerOwnerConfig.from_env()
+            self._send_html(render_owner_auth_html(configured=config.is_configured()))
+            return
         if parsed.path == "/auth/wechat-official/start":
             self._start_wechat_official_auth()
             return
@@ -888,6 +893,9 @@ class ContentAgentHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/auth/manual":
             self._finish_manual_auth()
+            return
+        if parsed.path == "/auth/owner":
+            self._finish_owner_auth()
             return
         if parsed.path == "/settings/wechat":
             self._save_wechat_settings()
@@ -1038,7 +1046,7 @@ class ContentAgentHandler(BaseHTTPRequestHandler):
         if json_response:
             self._send_json({"error": "authentication required"}, status=HTTPStatus.UNAUTHORIZED)
         else:
-            self._redirect("/auth/wechat/start?next=/app")
+            self._redirect("/auth/owner")
         return None
 
     def _start_wechat_auth(self, query: str) -> None:
@@ -1162,6 +1170,22 @@ class ContentAgentHandler(BaseHTTPRequestHandler):
             self._redirect("/app", cookies=[_session_cookie(session_token)])
         except Exception as exc:
             self._send_html(render_manual_auth_html(error=str(exc)), status=HTTPStatus.BAD_REQUEST)
+
+    def _finish_owner_auth(self) -> None:
+        config = ServerOwnerConfig.from_env()
+        params = parse.parse_qs(self._read_form_body())
+        try:
+            session_token = self.store.auth.create_server_owner_session(
+                config,
+                params.get("password", [""])[0],
+            )
+            self._redirect("/app", cookies=[_session_cookie(session_token)])
+        except Exception as exc:
+            status = HTTPStatus.UNAUTHORIZED if config.is_configured() else HTTPStatus.BAD_REQUEST
+            self._send_html(
+                render_owner_auth_html(configured=config.is_configured(), error=str(exc)),
+                status=status,
+            )
 
     def _save_wechat_settings(self) -> None:
         user = self._require_user()
@@ -1541,6 +1565,26 @@ def render_manual_auth_html(error: str = "") -> str:
     return MANUAL_AUTH_HTML.replace("{{ERROR}}", error_html)
 
 
+def render_owner_auth_html(configured: bool, error: str = "") -> str:
+    error_html = f'<p class="error">{html_escape(error)}</p>' if error else ""
+    if configured:
+        content = """
+        <p class="hint">公众号参数已由服务器配置，无需再次填写。请输入站点管理员密码进入工作台。</p>
+        <form method="post" action="/auth/owner">
+          <label for="password">管理员密码</label>
+          <input id="password" name="password" type="password" required autocomplete="current-password">
+          <button type="submit">使用服务器账号进入</button>
+        </form>
+        """
+    else:
+        content = """
+        <p class="hint">服务器公众号参数已存在，但还需要设置独立的站点管理员密码。</p>
+        <code>OWNER_LOGIN_PASSWORD=请设置一个足够长的随机密码</code>
+        <p>配置后重新创建应用容器，再返回此页面。</p>
+        """
+    return OWNER_AUTH_HTML.replace("{{ERROR}}", error_html).replace("{{CONTENT}}", content)
+
+
 def render_wechat_settings_html(account: dict, message: str = "", error: str = "") -> str:
     message_html = f'<p class="success">{html_escape(message)}</p>' if message else ""
     error_html = f'<p class="error">{html_escape(error)}</p>' if error else ""
@@ -1707,7 +1751,8 @@ TRIAL_HTML = r"""<!doctype html>
         <h2>微信公众号</h2>
         <p>适合先跑通选题、内容、排版、封面和草稿箱提交流程。</p>
         <div class="actions">
-          <a class="button primary" href="/auth/wechat/start?next=/app">登录工作台</a>
+          <a class="button primary" href="/auth/owner">使用服务器账号</a>
+          <a class="button secondary" href="/auth/wechat/start?next=/app">微信扫码登录</a>
           <a class="button secondary" href="/auth/wechat-official/start">授权公众号</a>
           <a class="button secondary" href="/auth/manual">手动填写参数</a>
         </div>
@@ -1725,6 +1770,39 @@ TRIAL_HTML = r"""<!doctype html>
         <div class="actions"><span class="soon">暂不可选</span></div>
       </article>
     </section>
+  </main>
+</body>
+</html>"""
+
+
+OWNER_AUTH_HTML = r"""<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>管理员登录 - Media Agent</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f6f7f2; color: #14211d; font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; letter-spacing: 0; }
+    main { width: min(520px, calc(100% - 36px)); background: #fff; border: 1px solid #dce3dc; border-radius: 8px; padding: 28px; box-shadow: 0 24px 70px rgba(20, 33, 29, .10); }
+    h1 { margin: 0 0 10px; font-size: 26px; }
+    p { color: #60706a; line-height: 1.7; }
+    .hint { padding: 14px; background: #f3f6f1; border-radius: 8px; }
+    .error { color: #b23b3b; font-weight: 800; }
+    label { display: block; margin: 18px 0 7px; color: #60706a; font-size: 13px; font-weight: 800; }
+    input { width: 100%; height: 46px; border: 1px solid #dce3dc; border-radius: 8px; padding: 0 12px; font-size: 15px; }
+    input:focus { border-color: #0f8a5f; outline: none; box-shadow: 0 0 0 3px rgba(15, 138, 95, .12); }
+    button { width: 100%; height: 48px; margin-top: 22px; border: 0; border-radius: 8px; background: #0f8a5f; color: #fff; font-size: 15px; font-weight: 900; cursor: pointer; }
+    code { display: block; padding: 12px; margin: 12px 0; background: #f3f6f1; border-radius: 8px; color: #0f6044; overflow-wrap: anywhere; }
+    a { color: #0f8a5f; font-weight: 800; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>管理员登录</h1>
+    {{ERROR}}
+    {{CONTENT}}
+    <p><a href="/trial">返回登录方式</a></p>
   </main>
 </body>
 </html>"""

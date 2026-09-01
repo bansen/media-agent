@@ -15,6 +15,7 @@ from content_agent.web import (
     validate_step_prerequisites,
     render_index_html,
     render_landing_html,
+    render_owner_auth_html,
     render_trial_html,
     mark_xiaohongshu_published,
     run_agent_step,
@@ -244,9 +245,24 @@ class WebTests(unittest.TestCase):
         self.assertIn('href="/auth/wechat/start?next=/app"', html)
         self.assertIn('href="/auth/wechat-official/start"', html)
         self.assertIn('href="/auth/manual"', html)
+        self.assertIn('href="/auth/owner"', html)
         self.assertIn("百家号", html)
         self.assertIn("小红书", html)
         self.assertIn("敬请期待", html)
+
+    def test_owner_auth_html_never_contains_server_wechat_credentials(self):
+        html = render_owner_auth_html(configured=True)
+
+        self.assertIn("使用服务器账号进入", html)
+        self.assertIn('name="password"', html)
+        self.assertNotIn("WECHAT_APP_SECRET", html)
+        self.assertNotIn("公众号 AppSecret", html)
+
+    def test_owner_auth_html_explains_missing_admin_password(self):
+        html = render_owner_auth_html(configured=False)
+
+        self.assertIn("OWNER_LOGIN_PASSWORD", html)
+        self.assertNotIn('name="password"', html)
 
     def test_session_cookie_name_is_stable(self):
         self.assertEqual(SESSION_COOKIE, "media_agent_session")
