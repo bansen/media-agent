@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import subprocess
 from dataclasses import dataclass
+from datetime import datetime
 from html import escape
 from pathlib import Path
 
@@ -63,7 +64,7 @@ def format_wechat_markdown(markdown: str, theme: str = "moyu-green") -> str:
     intro_blocks = document["intro_blocks"] if document["sections"] else []
 
     parts = [_container_start()]
-    parts.append(_cover(title))
+    parts.append(_cover(title, sections))
     if intro_blocks:
         parts.extend(_render_block(block, index=0) for block in intro_blocks)
     if len(sections) >= 2:
@@ -197,9 +198,17 @@ def _container_start() -> str:
     )
 
 
-def _cover(title: str) -> str:
+def _cover(title: str, sections: list[dict]) -> str:
     first, second = _split_title(title)
     cover_label = _cover_label(title)
+    subtitle = _cover_subtitle(sections)
+    subtitle_html = (
+        f'''<p style="font-size:13px;color:#9CA3AF;margin:0;line-height:1.7;letter-spacing:0.5px;">
+        <span leaf="">{_text(subtitle)}</span>
+      </p>'''
+        if subtitle
+        else ""
+    )
     return f"""
 <section style="margin:0 0 32px;background:#fff;border:1.5px solid rgba(5,150,105,0.15);border-radius:20px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.06);width:100%;">
   <section style="padding:32px 28px 28px;">
@@ -207,12 +216,9 @@ def _cover(title: str) -> str:
       <span style="width:6px;height:6px;background:#059669;border-radius:50%;"><span leaf=""><br></span></span>
       <span style="font-size:11px;font-weight:700;letter-spacing:3px;color:#059669;"><span leaf="">TUTORIAL</span></span>
       <section style="flex:1;height:1px;overflow:hidden;background:linear-gradient(to right,rgba(5,150,105,0.12),transparent);"><span leaf=""><br></span></section>
-      <span style="font-size:10px;color:#D1D5DB;font-weight:600;"><span leaf="">2026.07</span></span>
+      <span style="font-size:10px;color:#D1D5DB;font-weight:600;"><span leaf="">{datetime.now().strftime('%Y.%m')}</span></span>
     </section>
     <section>
-      <p style="font-size:15px;color:#D1D5DB;margin:0 0 6px;text-decoration:line-through;letter-spacing:0.5px;">
-        <span leaf="">先追风口</span>
-      </p>
       <p style="font-size:24px;font-weight:900;color:#111827;margin:0;line-height:1.16;letter-spacing:0;">
         <span leaf="">{_text(first)}</span>
       </p>
@@ -222,9 +228,7 @@ def _cover(title: str) -> str:
       <section style="width:48px;height:3px;background:linear-gradient(to right,#059669,#34D399);border-radius:2px;margin-bottom:12px;">
         <span leaf=""><br></span>
       </section>
-      <p style="font-size:13px;color:#9CA3AF;margin:0;line-height:1.7;letter-spacing:0.5px;">
-        <span leaf="">真实需求 · 小步验证 · 可交付流程</span>
-      </p>
+      {subtitle_html}
     </section>
   </section>
   <section style="background:linear-gradient(135deg,#059669,#10B981);padding:12px 28px;display:flex;align-items:center;justify-content:space-between;">
@@ -237,6 +241,16 @@ def _cover(title: str) -> str:
     </section>
   </section>
 </section>""".strip()
+
+
+def _cover_subtitle(sections: list[dict]) -> str:
+    """Use an article-specific section as the cover context, when available."""
+    generic_titles = {"正文", "写在最后", "结语", "总结", "总结与行动"}
+    for section in sections:
+        title = str(section.get("title", "")).strip()
+        if title and title not in generic_titles:
+            return f"本文拆解：{title}"
+    return ""
 
 
 def _toc(sections: list[dict]) -> str:

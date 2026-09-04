@@ -1,6 +1,7 @@
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from content_agent.exporters import build_wechat_draft_payload
@@ -95,6 +96,19 @@ class WeChatGzhFormattingTests(unittest.TestCase):
 
         self.assertIn("别再问“AI能干嘛”了，", html)
         self.assertIn("MiniMax H3的新模型", html)
+
+    def test_cover_uses_current_date_and_topic_subtitle(self):
+        with patch("content_agent.formatters.wechat_gzh.datetime") as mocked_datetime:
+            mocked_datetime.now.return_value.strftime.return_value = "2026.09"
+            html = format_wechat_markdown(
+                "# 用 AI 做视频，别再手工剪辑\n\n## 把文字变成可发布的视频\n\n正文内容。"
+            )
+
+        self.assertIn("2026.09", html)
+        self.assertIn("本文拆解：把文字变成可发布的视频", html)
+        self.assertNotIn("2026.07", html)
+        self.assertNotIn("先追风口", html)
+        self.assertNotIn("真实需求 · 小步验证 · 可交付流程", html)
 
     def test_cover_label_matches_model_topic(self):
         html = format_wechat_markdown("# MiniMax H3有新变化，普通人先看懂这 3 点\n\n## 第一节\n\n正文内容。")
