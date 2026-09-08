@@ -527,3 +527,37 @@ class GenerationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FactualGenerationTests(unittest.TestCase):
+    def test_rewrites_article_that_inverts_market_move(self):
+        result = run_keyword_workflow(
+            "湖南卫视 AI 猴子闹出约 133 亿市值",
+            [
+                CandidateContent(
+                    title="湖南卫视一只“AI猴子”，闹出133亿",
+                    source="baidu_search",
+                    url="https://www.thepaper.cn/newsDetail_forward_34020108",
+                    heat=90,
+                    interaction=80,
+                    hook=88,
+                    pain=70,
+                    reuse=75,
+                    material=86,
+                    summary="截至9月4日，芒果超媒近5个交易日累计上涨50.18%，公司市值大涨约132.84亿元。",
+                )
+            ],
+        )
+        topic = replace(result.topics[0], optimized_title="芒果超媒市值大涨，AI长剧还要算口碑")
+        result = replace(result, topics=[topic, *result.topics[1:]])
+        bad = "# 错误\n\n一只猴子，让湖南卫视市值一天蒸发133亿。"
+        good = "# 正确\n\n芒果超媒近5个交易日市值大涨约132.84亿元。"
+        llm = SequenceLLMProvider([bad, good])
+
+        drafts = generate_llm_drafts(result, llm)
+
+        self.assertIn("市值大涨", drafts["wechat_article"])
+        self.assertNotIn("蒸发", drafts["wechat_article"])
+        self.assertEqual(len(llm.prompts), 2)
+        self.assertIn("事实红线", llm.prompts[0])
+        self.assertIn("不得写成蒸发", llm.prompts[1])

@@ -7,6 +7,7 @@ from typing import Protocol
 
 from .models import ContentChannel, TopicBrief, WorkflowResult
 from .prompts import build_cover_prompt_from_strategy, build_cover_strategy, build_wechat_outline, build_xhs_package
+from .factual_guard import factual_conflicts, source_facts
 
 
 FORBIDDEN_TITLE_TERMS = [
@@ -51,16 +52,21 @@ def generate_llm_content_plan(
     prompt = _planning_prompt(result, channel)
     response = llm.generate(prompt)
     try:
-        return parse_llm_content_plan(response, channel)
+        plan = parse_llm_content_plan(response, channel)
+        _reject_invented_facts(result, plan)
+        return plan
     except ValueError as exc:
         correction_prompt = "\n\n".join(
             [
                 prompt,
                 f"上一次内容策划不合格：{exc}",
                 "请修正所有字段和标题，重新输出完整 JSON。不要解释，不要只返回修改过的字段。",
+                "用户提示词只是选题角度，不能当作事实；涨跌、金额、时间和主体必须与素材一致，素材没写的不要补。",
             ]
         )
-        return parse_llm_content_plan(llm.generate(correction_prompt), channel)
+        plan = parse_llm_content_plan(llm.generate(correction_prompt), channel)
+        _reject_invented_facts(result, plan)
+        return plan
 
 
 def parse_llm_content_plan(response: str, channel: ContentChannel) -> LLMEditorialPlan:
@@ -86,7 +92,7 @@ def parse_llm_content_plan(response: str, channel: ContentChannel) -> LLMEditori
         raise ValueError(f"DeepSeek 返回的所有标题都超过 {title_limit} 个字符")
     if selected_title not in titles:
         selected_title = titles[0]
-    return LLMEditorialPlan(
+    plan = LLMEditorialPlan(
         core_topic=str(payload["core_topic"]).strip(),
         target_audience=str(payload["target_audience"]).strip(),
         pain_point=str(payload["pain_point"]).strip(),
@@ -97,6 +103,7 @@ def parse_llm_content_plan(response: str, channel: ContentChannel) -> LLMEditori
         titles=titles,
         selected_title=selected_title,
     )
+    return plan
 
 
 def apply_llm_content_plan(
@@ -138,19 +145,40 @@ def apply_llm_content_plan(
     )
 
 
+
+def _reject_invented_facts(result: WorkflowResult, plan: LLMEditorialPlan) -> None:
+    topic = result.topics[0]
+    generated = "\n".join(
+        [
+            plan.core_topic,
+            plan.pain_point,
+            plan.core_value,
+            plan.selected_title,
+            *plan.key_points,
+            *plan.titles,
+            *plan.article_structure,
+        ]
+    )
+    issues = factual_conflicts(source_facts(topic.title, topic.source_summary), generated)
+    if issues:
+        raise ValueError("内容策划与素材事实冲突：" + "；".join(issues))
+
+
 def _planning_prompt(result: WorkflowResult, channel: ContentChannel) -> str:
     topic = result.topics[0]
     title_limit = 20 if channel == "xiaohongshu" else 34
     return "\n".join(
         [
             "你是资深中文自媒体总编。请先做内容策划，不要写正文。",
-            "只根据用户提示词和素材事实提炼核心内容，不得臆造项目功能、数据、用户评价或收益。",
+            "只根据素材标题和素材正文摘要提炼事实，不得臆造项目功能、数据、用户评价或收益。",
+            "用户提示词只是选题角度，不是事实来源。素材写大涨就不得写成蒸发、暴跌或大跌；素材写下跌就不得写成大涨。",
+            "金额、时间范围和主体必须与素材一致。素材没写的数字、一天内涨跌、因果不要补。",
             f"发布渠道：{channel}",
             f"用户提示词：{result.keyword}",
             f"来源标题：{topic.title}",
             f"来源链接：{topic.url or '无'}",
             "素材正文摘要：",
-            topic.source_summary.strip() or "未提供摘要，请仅根据来源标题和用户提示词判断。",
+            topic.source_summary.strip() or "未提供摘要。只能使用来源标题中的事实，用户提示词不能当作事实。",
             "",
             "请输出 5 个差异明显、体现具体痛点/能力/结果的候选标题，并选择最佳标题。",
             "所有标题必须使用中文表达；可以保留必要的产品名、AI、PPT、Agent 等专有名词。",

@@ -7,6 +7,7 @@ from typing import Protocol
 from .content_planner import ContentPlan, build_content_plan
 from .models import WorkflowResult
 from .skill_loader import load_content_skill
+from .factual_guard import factual_conflicts, source_facts
 
 
 class TextGenerationProvider(Protocol):
@@ -33,29 +34,41 @@ def generate_llm_drafts(
             progress(f"Generating {name} with LLM")
         generated = llm.generate(prompt)
         if name == "wechat_article":
-            issues = _wechat_alignment_issues(generated, legacy_plan) if legacy_plan else []
+            issues = _wechat_draft_issues(generated, result, legacy_plan)
             if issues:
                 if progress:
-                    progress("Rewriting off-topic WeChat draft")
+                    progress("Rewriting WeChat draft that conflicts with source facts")
                 correction_prompt = "\n\n".join(
                     [
                         prompt,
+                        "上一次正文偏离项目主题或与素材事实冲突，必须整篇重写，不能只补一段。",
                         "上一次正文偏离项目主题，必须整篇重写，不能只补一段。",
-                        "偏题原因：" + "；".join(issues),
-                        "重写要求：严格按照内容运营蓝图逐节展开，只输出完整 Markdown 正文。",
+                        "不合格原因：" + "；".join(issues),
+                        "重写要求：严格按照内容运营蓝图逐节展开，只使用素材里已经写明的事实；涨跌方向、金额、时间和主体不得写反或补写。只输出完整 Markdown 正文。",
                     ]
                 )
                 generated = llm.generate(correction_prompt)
-                remaining_issues = _wechat_alignment_issues(generated, legacy_plan)
+                remaining_issues = _wechat_draft_issues(generated, result, legacy_plan)
                 if remaining_issues:
-                    raise RuntimeError("公众号正文主题校验失败：" + "；".join(remaining_issues))
+                    raise RuntimeError("公众号正文事实校验失败：" + "；".join(remaining_issues))
             generated = _force_markdown_title(generated, topic.optimized_title)
+            title_issues = factual_conflicts(source_facts(topic.title, topic.source_summary), topic.optimized_title)
+            if title_issues:
+                raise RuntimeError("公众号标题与素材事实冲突：" + "；".join(title_issues))
         elif name == "xhs_note" and result.content_plan:
             generated = _force_xhs_title(generated, topic.optimized_title)
         drafts[name] = generated
     drafts["selected_topic"] = topic.optimized_title
     drafts["source_topic"] = topic.title
     return drafts
+
+
+
+def _wechat_draft_issues(markdown: str, result: WorkflowResult, plan: ContentPlan | None) -> list[str]:
+    issues = _wechat_alignment_issues(markdown, plan) if plan else []
+    topic = result.topics[0]
+    issues.extend(factual_conflicts(source_facts(topic.title, topic.source_summary), markdown))
+    return issues
 
 
 def _wechat_alignment_issues(markdown: str, plan: ContentPlan) -> list[str]:
@@ -164,6 +177,11 @@ def _wechat_prompt(result: WorkflowResult) -> str:
                 "内容质量红线：不要把用户提示词、搜索链接、来源标题当正文复制；"
                 "不要连续两个小节重复同一观点；每个小标题下面必须提供新的信息、判断或行动；"
                 "如果写卡片、清单或关键问题，数量必须和正文展开的点数一致。"
+            ),
+            (
+                "事实红线：正文只能使用素材标题和素材摘要里已经写明的事实。"
+                "用户提示词只是选题角度，不能当成事实。素材写大涨就不得写成蒸发、暴跌或大跌；"
+                "素材写下跌就不得写成大涨。金额、时间范围和主体必须与素材一致，素材没写的数字和因果不要补。"
             ),
             "内容策划是事实与结构的唯一主线；不得自行替换核心主题、受众、核心价值或文章结构。" if editorial_plan else "",
             (

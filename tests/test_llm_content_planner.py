@@ -80,7 +80,7 @@ class LLMContentPlannerTests(unittest.TestCase):
         self.assertEqual(plan.selected_title, "Agency Agents：把岗位职责变成一支 AI 团队")
         self.assertEqual(len(plan.titles), 5)
         self.assertIn("Agency Agents 提供一套完整的专业 AI 智能体角色", llm.prompts[0])
-        self.assertIn("只根据用户提示词和素材事实", llm.prompts[0])
+        self.assertIn("用户提示词只是选题角度，不是事实来源", llm.prompts[0])
         self.assertIn("所有标题必须使用中文表达", llm.prompts[0])
         self.assertIn("只输出 JSON", llm.prompts[0])
 
@@ -127,6 +127,36 @@ class LLMContentPlannerTests(unittest.TestCase):
         self.assertIn(plan.selected_title, updated.wechat_outline)
         self.assertIn(plan.selected_title, updated.cover_prompt)
         self.assertIn(plan.cover_concept, updated.cover_prompt)
+
+    def test_rejects_market_cap_direction_inverted_from_source(self):
+        result = run_keyword_workflow(
+            "湖南卫视 AI 猴子闹出约 133 亿市值",
+            [
+                CandidateContent(
+                    title="湖南卫视一只“AI猴子”，闹出133亿",
+                    source="baidu_search",
+                    url="https://www.thepaper.cn/newsDetail_forward_34020108",
+                    heat=90,
+                    interaction=80,
+                    hook=88,
+                    pain=70,
+                    reuse=75,
+                    material=86,
+                    summary="截至9月4日，芒果超媒近5个交易日累计上涨50.18%，公司市值大涨约132.84亿元。",
+                )
+            ],
+        )
+        bad = _response("湖南卫视AI猴子惹祸，133亿市值蒸发背后")
+        good = _response("AI猴子带火芒果超媒，市值大涨约133亿")
+        llm = SequenceLLMProvider([bad, good])
+
+        plan = generate_llm_content_plan(llm, result, channel="wechat")
+
+        self.assertNotIn("蒸发", plan.selected_title)
+        self.assertEqual(len(llm.prompts), 2)
+        self.assertIn("内容策划与素材事实冲突", llm.prompts[1])
+
+
 
 
 if __name__ == "__main__":
