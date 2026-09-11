@@ -121,12 +121,40 @@ class LLMContentPlannerTests(unittest.TestCase):
 
         updated = apply_llm_content_plan(result, plan, channel="wechat")
 
-        self.assertEqual(updated.topics[0].optimized_title, plan.selected_title)
+        # WeChat published title locks to the creative prompt, not DeepSeek's selected_title.
+        self.assertEqual(updated.topics[0].optimized_title, result.keyword.strip())
         self.assertEqual(updated.content_plan["core_value"], plan.core_value)
-        self.assertEqual(updated.topics[0].title_candidates[0]["title"], plan.selected_title)
-        self.assertIn(plan.selected_title, updated.wechat_outline)
-        self.assertIn(plan.selected_title, updated.cover_prompt)
+        self.assertEqual(updated.topics[0].title_candidates[0]["title"], result.keyword.strip())
+        self.assertIn(result.keyword.strip(), updated.wechat_outline)
+        self.assertIn(result.keyword.strip(), updated.cover_prompt)
         self.assertIn(plan.cover_concept, updated.cover_prompt)
+
+    def test_wechat_article_title_prefers_original_topic_over_llm_selected(self):
+        from content_agent.models import CandidateContent
+        from content_agent.workflow import run_keyword_workflow
+
+        topic = "Astra 没人盯就写「机器垃圾代码」：隔夜改仓库你敢不敢交？"
+        result = run_keyword_workflow(
+            topic,
+            [
+                CandidateContent(
+                    title="Astra unsupervised coding concerns",
+                    source="baidu_search",
+                    url="https://example.com/astra",
+                    heat=80,
+                    interaction=70,
+                    hook=75,
+                    pain=70,
+                    reuse=70,
+                    material=80,
+                    summary="Astra may write low-quality code when unsupervised overnight.",
+                )
+            ],
+        )
+        plan = generate_llm_content_plan(FakeLLMProvider(_response("OpenAI推出Agents API公测版")), result, channel="wechat")
+        updated = apply_llm_content_plan(result, plan, channel="wechat")
+        self.assertEqual(updated.topics[0].optimized_title, topic)
+        self.assertNotEqual(updated.topics[0].optimized_title, plan.selected_title)
 
     def test_rejects_market_cap_direction_inverted_from_source(self):
         result = run_keyword_workflow(
