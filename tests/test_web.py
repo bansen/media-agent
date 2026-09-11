@@ -365,10 +365,10 @@ class WebTests(unittest.TestCase):
         self.assertIn("Codex 制作出海网站", payload["topics"][0]["title"])
         self.assertIn("正在用百度搜索收集候选素材", events)
 
-    def test_run_agent_workflow_prefers_websearch_mcp_when_prompt_contains_repo_link(self):
-        websearch_candidate = CandidateContent(
+    def test_run_agent_workflow_uses_source_urls_and_skips_baidu_when_prompt_contains_link(self):
+        source_candidate = CandidateContent(
             title="GitHub 开源项目：bansen/media-agent - AI content agent",
-            source="websearch_mcp",
+            source="source_urls",
             url="https://github.com/bansen/media-agent",
             heat=96,
             interaction=90,
@@ -378,41 +378,11 @@ class WebTests(unittest.TestCase):
             material=96,
             summary="项目：bansen/media-agent；Stars: 1234；README 摘要：公众号草稿箱工作流。",
         )
-        baidu_candidate = CandidateContent(
-            title="自媒体 AI 工具合集",
-            source="baidu_search",
-            url="https://example.com/tools",
-            heat=70,
-            interaction=65,
-            hook=72,
-            pain=68,
-            reuse=70,
-            material=65,
-        )
         events = []
-        config = AgentConfig(
-            llm_provider="deepseek",
-            llm_base_url="https://api.deepseek.com",
-            llm_model="deepseek-chat",
-            llm_api_key="",
-            replicate_api_token="",
-            replicate_cover_model_version="",
-            replicate_cover_model="black-forest-labs/flux-1.1-pro",
-            wechat_app_id="",
-            wechat_app_secret="",
-            wechat_access_token="",
-            free_hot_sources=[],
-            database_url="",
-            baidu_search_api_key="baidu-secret",
-            websearch_mcp_enabled=True,
-            tavily_api_key="test-tavily-key",
-        )
 
-        with patch("content_agent.web.collect_websearch_mcp_candidates", return_value=[websearch_candidate]), patch(
-            "content_agent.web.collect_baidu_search_candidates", return_value=[baidu_candidate]
-        ), patch(
-            "content_agent.web.AgentConfig.from_env_file", return_value=config
-        ):
+        with patch("content_agent.web.collect_source_url_candidates", return_value=[source_candidate]) as source_mock, patch(
+            "content_agent.web.collect_baidu_search_candidates"
+        ) as baidu_mock:
             payload = run_agent_workflow(
                 WebRunOptions(
                     keyword="帮我写公众号，分享这个项目 https://github.com/bansen/media-agent",
@@ -423,40 +393,23 @@ class WebTests(unittest.TestCase):
                 progress=events.append,
             )
 
-        self.assertEqual(payload["topics"][0]["source"], "websearch_mcp")
+        self.assertEqual(payload["topics"][0]["source"], "source_urls")
         self.assertIn("bansen/media-agent", payload["topics"][0]["source_summary"])
-        self.assertIn("正在通过 WebSearch MCP 读取链接内容", events)
-        self.assertIn("正在用百度搜索补充外部素材", events)
+        self.assertTrue(any("原链接" in event for event in events))
+        source_mock.assert_called_once()
+        baidu_mock.assert_not_called()
 
-    def test_run_agent_workflow_reports_missing_tavily_key_before_starting_mcp(self):
-        with patch("content_agent.web.AgentConfig.from_env_file") as from_env:
-            from_env.return_value = AgentConfig(
-                llm_provider="deepseek",
-                llm_base_url="https://api.deepseek.com",
-                llm_model="deepseek-chat",
-                llm_api_key="",
-                replicate_api_token="",
-                replicate_cover_model_version="",
-                replicate_cover_model="black-forest-labs/flux-1.1-pro",
-                wechat_app_id="",
-                wechat_app_secret="",
-                wechat_access_token="",
-                free_hot_sources=[],
-                database_url="",
-                baidu_search_api_key="baidu-secret",
-                websearch_mcp_enabled=True,
-                tavily_api_key="",
-            )
-
-            with self.assertRaisesRegex(RuntimeError, "生产环境缺少 TAVILY_API_KEY"):
-                run_agent_workflow(
-                    WebRunOptions(
-                        keyword="写一篇分享 https://github.com/huangruiteng/loopx/blob/main/README.zh-CN.md 的文章",
-                        channel="wechat",
-                        collector="baidu_search",
-                        format_gzh=False,
-                    )
+    def test_run_agent_workflow_briefing_without_source_urls_fails_clearly(self):
+        with self.assertRaisesRegex(ValueError, "简报选题已勾选但未提供原链接"):
+            run_agent_workflow(
+                WebRunOptions(
+                    keyword="只有简报标题没有链接",
+                    channel="wechat",
+                    collector="baidu_search",
+                    use_prompt_as_title=True,
+                    format_gzh=False,
                 )
+            )
 
     def test_web_rejects_paid_public_search_collector(self):
         with self.assertRaisesRegex(ValueError, "collector must be baidu_search"):

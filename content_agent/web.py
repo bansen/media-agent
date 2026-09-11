@@ -27,10 +27,10 @@ from .auth import (
     parse_wechat_component_event,
 )
 from .collectors.baidu_search import collect_baidu_search_candidates
-from .collectors.websearch_mcp import (
-    StdioMCPToolRunner,
-    collect_websearch_mcp_candidates,
-    extract_prompt_urls,
+from .collectors.source_urls import (
+    collect_source_url_candidates,
+    parse_source_urls_field,
+    resolve_source_urls,
 )
 from .config import AgentConfig
 from .cover_generation import generate_cover_image
@@ -70,6 +70,7 @@ class WebRunOptions:
     generate_cover: bool = False
     submit_wechat_draft: bool = False
     use_prompt_as_title: bool = False
+    source_urls: tuple[str, ...] = ()
     wechat_content_html: str = ""
     wechat_cover_image: str = ""
     format_theme: str = "moyu-green"
@@ -314,6 +315,7 @@ def _options_to_json(options: WebRunOptions) -> dict:
         "collector": options.collector,
         "use_llm": options.use_llm,
         "use_prompt_as_title": options.use_prompt_as_title,
+        "source_urls": list(options.source_urls),
         "format_gzh": options.format_gzh,
         "generate_cover": options.generate_cover,
         "submit_wechat_draft": options.submit_wechat_draft,
@@ -337,6 +339,7 @@ def _options_from_json(payload: dict | None) -> WebRunOptions:
         generate_cover=bool(payload.get("generate_cover", False)),
         submit_wechat_draft=bool(payload.get("submit_wechat_draft", False)),
         use_prompt_as_title=bool(payload.get("use_prompt_as_title", False)),
+        source_urls=tuple(resolve_source_urls(parse_source_urls_field(payload.get("source_urls")), "")),
         wechat_content_html=str(payload.get("wechat_content_html", "")),
         wechat_cover_image=str(payload.get("wechat_cover_image", "")),
         format_theme=str(payload.get("format_theme", "moyu-green")),
@@ -471,9 +474,12 @@ def run_agent_workflow(
 
     candidates = _collect_candidates(options, progress=emit)
     emit(f"已收集 {len(candidates)} 条候选素材")
-    if not candidates and options.collector == "baidu_search":
-        emit("百度搜索暂无结果，已改用关键词种子选题")
-        candidates = build_keyword_seed_candidates(options.keyword, options.channel)
+    if not candidates:
+        if options.use_prompt_as_title or resolve_source_urls(options.source_urls, options.keyword):
+            raise ValueError("原链接未能提取到可用内容，请检查链接是否可公开访问")
+        if options.collector == "baidu_search":
+            emit("百度搜索暂无结果，已改用关键词种子选题")
+            candidates = build_keyword_seed_candidates(options.keyword, options.channel)
     emit("正在评分并生成选题")
     result = run_keyword_workflow(options.keyword, candidates=candidates, primary_channel=options.channel)
     llm = None
@@ -590,6 +596,8 @@ def run_agent_step(
         candidates = _collect_candidates(options, progress=emit)
         emit(f"已收集 {len(candidates)} 条候选素材")
         if not candidates:
+            if options.use_prompt_as_title or resolve_source_urls(options.source_urls, options.keyword):
+                raise ValueError("原链接未能提取到可用内容，请检查链接是否可公开访问")
             emit("百度搜索暂无结果，已改用关键词种子选题")
             candidates = build_keyword_seed_candidates(options.keyword, options.channel)
         emit("正在评分并生成选题")
@@ -1315,6 +1323,7 @@ def _options_from_payload(payload: dict) -> WebRunOptions:
         generate_cover=bool(payload.get("generate_cover", False)),
         submit_wechat_draft=bool(payload.get("submit_wechat_draft", False)),
         use_prompt_as_title=bool(payload.get("use_prompt_as_title", False)),
+        source_urls=tuple(resolve_source_urls(parse_source_urls_field(payload.get("source_urls")), "")),
         wechat_content_html=str(payload.get("wechat_content_html", "")).strip(),
         wechat_cover_image=str(payload.get("wechat_cover_image", "")).strip(),
         format_theme=str(payload.get("format_theme", "moyu-green")).strip() or "moyu-green",
@@ -1423,36 +1432,21 @@ def _step_finished_message(step: StepName) -> str:
 
 
 def _collect_candidates(options: WebRunOptions, progress: Callable[[str], None] | None = None):
-    config = AgentConfig.from_env_file()
+    emit = progress or (lambda message: None)
+    source_urls = resolve_source_urls(options.source_urls, options.keyword)
+    if options.use_prompt_as_title or source_urls:
+        if not source_urls:
+            raise ValueError("简报选题已勾选但未提供原链接，请粘贴来源 URL")
+        emit(f"正在直接读取 {len(source_urls)} 个原链接")
+        candidates = collect_source_url_candidates(source_urls, limit=10)
+        emit("原链接素材读取完成")
+        return _dedupe_candidates(candidates)
     if options.collector == "baidu_search":
-        emit = progress or (lambda message: None)
-        candidates = []
-        if extract_prompt_urls(options.keyword):
-            emit("正在通过 WebSearch MCP 读取链接内容")
-            candidates.extend(
-                collect_websearch_mcp_candidates(
-                    options.keyword,
-                    runner=_websearch_mcp_runner(config),
-                    limit=4,
-                )
-            )
-            emit("正在用百度搜索补充外部素材")
-        else:
-            emit("正在用百度搜索收集候选素材")
-        candidates.extend(collect_baidu_search_candidates(options.keyword, api_key=config.baidu_search_api_key))
+        emit("正在用百度搜索收集候选素材")
+        config = AgentConfig.from_env_file()
+        candidates = collect_baidu_search_candidates(options.keyword, api_key=config.baidu_search_api_key)
         return _dedupe_candidates(candidates)
     raise ValueError("collector must be baidu_search")
-
-
-def _websearch_mcp_runner(config: AgentConfig) -> StdioMCPToolRunner:
-    if not config.tavily_api_key.strip():
-        raise RuntimeError("生产环境缺少 TAVILY_API_KEY，请在服务器 /opt/media-agent/.env.production 中配置后重启服务。")
-    return StdioMCPToolRunner(
-        command=config.websearch_mcp_command,
-        args=config.websearch_mcp_args,
-        env={"TAVILY_API_KEY": config.tavily_api_key},
-        timeout=config.websearch_mcp_timeout,
-    )
 
 
 def _dedupe_candidates(candidates):
@@ -2273,6 +2267,9 @@ INDEX_HTML = r"""<!doctype html>
           <span>简报选题：成稿标题用提示词原文</span>
         </label>
         <p class="empty" style="margin-top:0;">仅情报简报选题勾选。手动输入关键词时不要勾，继续智能生成标题。</p>
+        <label for="sourceUrls">原链接（每行一个）</label>
+        <textarea id="sourceUrls" name="source_urls" rows="3" placeholder="https://example.com/article&#10;可与创作提示词中的链接一起使用"></textarea>
+        <p class="empty" style="margin-top:0;">简报选题或填写原链接时，直接抓取页面内容，不再走百度搜索。</p>
 
         <label for="channel">渠道</label>
         <select id="channel" name="channel">
@@ -2599,6 +2596,7 @@ INDEX_HTML = r"""<!doctype html>
         generate_cover: false,
         submit_wechat_draft: false,
         use_prompt_as_title: document.getElementById("usePromptAsTitle").checked,
+        source_urls: document.getElementById("sourceUrls").value,
         wechat_content_html: "",
         wechat_cover_image: "",
         format_theme: document.getElementById("formatTheme").value,
@@ -2613,6 +2611,13 @@ INDEX_HTML = r"""<!doctype html>
       if (options.channel) document.getElementById("channel").value = options.channel;
       if (options.collector) document.getElementById("collector").value = options.collector;
       document.getElementById("usePromptAsTitle").checked = Boolean(options.use_prompt_as_title);
+      if (options.source_urls) {
+        document.getElementById("sourceUrls").value = Array.isArray(options.source_urls)
+          ? options.source_urls.join("\n")
+          : String(options.source_urls);
+      } else {
+        document.getElementById("sourceUrls").value = "";
+      }
       if (options.format_theme) document.getElementById("formatTheme").value = options.format_theme;
       if (options.cover_style) document.getElementById("coverStyle").value = options.cover_style;
       if (options.xhs_layout_theme) document.getElementById("xhsLayoutTheme").value = options.xhs_layout_theme;

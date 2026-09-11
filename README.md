@@ -92,22 +92,25 @@ This writes:
 - `output/<keyword>_排版_摸鱼绿(moyu-green).html` - clean WeChat body fragment.
 - `output/<keyword>_排版_摸鱼绿(moyu-green)_预览.html` - browser preview with a copy button.
 
-## Baidu Search Data
+## Topic Sources
 
-`baidu_search` is the only user-facing topic source. It queries Baidu Qianfan web search, filters obvious ads/promoted results, maps the first results into `CandidateContent`, then reuses the existing scoring, drafting, formatting, cover, and WeChat draft submission workflow.
+Manual keywords still use `baidu_search` (Baidu Qianfan web search): it filters obvious ads/promoted results, maps hits into `CandidateContent`, then reuses scoring, drafting, formatting, cover, and WeChat draft submission.
 
-Configure:
+Briefing topics and any run that supplies source URLs skip Baidu entirely. The workbench / API / CLI fetch each `http(s)` page directly (plain HTTP + HTML/text extraction) and build candidates from that content. Do **not** use Tavily for this path.
+
+Configure Baidu for ordinary keyword runs:
 
 ```env
 BAIDU_SEARCH_API_KEY=your_baidu_qianfan_key
-WEBSEARCH_MCP_ENABLED=true
-WEBSEARCH_MCP_COMMAND=npx
-WEBSEARCH_MCP_ARGS=-y,tavily-mcp@0.1.3
-WEBSEARCH_MCP_TIMEOUT=60
-TAVILY_API_KEY=your_tavily_key
 ```
 
-When the creative prompt contains a URL, for example a GitHub repository or product docs link, the workflow first reads that page through WebSearch MCP and then uses Baidu as supplemental Chinese web material. Ordinary prompts still use Baidu as the primary user-facing source.
+Pass source URLs via:
+
+- Workbench textarea「原链接（每行一个）」, or paste links inside the creative prompt
+- API / options JSON field `source_urls` (array or newline-separated string)
+- CLI `--source-url` (repeatable). Briefing mode: `--use-prompt-as-title` (requires at least one URL)
+
+If「简报选题」is checked but no URL can be resolved, the run fails with `简报选题已勾选但未提供原链接，请粘贴来源 URL` instead of falling back to Baidu.
 
 Run with:
 
@@ -115,9 +118,16 @@ Run with:
 python3 -m content_agent.cli \
   --keyword "AI副业" \
   --channel wechat
+
+# Briefing / source-link mode
+python3 -m content_agent.cli \
+  --keyword "某条简报选题标题" \
+  --use-prompt-as-title \
+  --source-url "https://example.com/original-article" \
+  --channel wechat
 ```
 
-If Baidu returns no usable result for a niche keyword, the workflow falls back to keyword-seed topics so the user can still generate a preview instead of hitting an empty-candidate error.
+If Baidu returns no usable result for a niche keyword (manual mode only), the workflow falls back to keyword-seed topics so the user can still generate a preview instead of hitting an empty-candidate error.
 
 ## Web Workbench
 

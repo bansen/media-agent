@@ -7,6 +7,7 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 
 from .collectors.baidu_search import collect_baidu_search_candidates
+from .collectors.source_urls import collect_source_url_candidates, resolve_source_urls
 from .config import AgentConfig
 from .cover_generation import generate_cover_image
 from .formatters.wechat_gzh import format_wechat_markdown, write_gzh_outputs
@@ -39,6 +40,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--submit-wechat-draft", action="store_true", help="Submit the formatted WeChat article to draft box.")
     parser.add_argument("--wechat-content-html", help="Existing formatted WeChat HTML file to submit.")
     parser.add_argument("--wechat-cover-image", help="Local cover image path used as WeChat thumb material.")
+    parser.add_argument(
+        "--source-url",
+        action="append",
+        default=[],
+        dest="source_urls",
+        help="Source page URL to fetch directly (repeatable). Skips Baidu when provided.",
+    )
+    parser.add_argument(
+        "--use-prompt-as-title",
+        action="store_true",
+        help="Briefing mode: keep creative prompt as the article title; requires --source-url or URLs in --keyword.",
+    )
     parser.add_argument("--output-dir", default="output", help="Directory for generated files.")
     args = parser.parse_args(argv)
 
@@ -50,8 +63,16 @@ def main(argv: list[str] | None = None) -> int:
         print("--wechat-cover-image is required when --submit-wechat-draft is used without --generate-cover", file=sys.stderr)
         return 2
 
-    candidates = _collect_candidates(args.keyword, args.channel, args.collector)
-    if not candidates and args.collector == "baidu_search":
+    candidates = _collect_candidates(
+        args.keyword,
+        args.channel,
+        args.collector,
+        source_urls=args.source_urls,
+        use_prompt_as_title=args.use_prompt_as_title,
+    )
+    if not candidates and args.collector == "baidu_search" and not (
+        args.use_prompt_as_title or resolve_source_urls(args.source_urls, args.keyword)
+    ):
         _progress("Baidu search returned no candidates; using keyword seed topics")
         candidates = build_keyword_seed_candidates(args.keyword, args.channel)
     result = run_keyword_workflow(
@@ -66,7 +87,12 @@ def main(argv: list[str] | None = None) -> int:
         llm = config.build_llm_provider()
         _progress("Generating content plan and Chinese titles with LLM")
         content_plan = generate_llm_content_plan(llm, result, channel=args.channel)
-        result = apply_llm_content_plan(result, content_plan, channel=args.channel)
+        result = apply_llm_content_plan(
+            result,
+            content_plan,
+            channel=args.channel,
+            use_prompt_as_title=args.use_prompt_as_title,
+        )
         _progress("Finished LLM content planning")
     payload = _to_jsonable(result)
     if args.use_llm:
@@ -145,7 +171,21 @@ def _progress(message: str) -> None:
     print(f"[content-agent] {message}", file=sys.stderr, flush=True)
 
 
-def _collect_candidates(keyword: str, channel: str, collector: str):
+def _collect_candidates(
+    keyword: str,
+    channel: str,
+    collector: str,
+    source_urls: list[str] | None = None,
+    use_prompt_as_title: bool = False,
+):
+    urls = resolve_source_urls(source_urls or [], keyword)
+    if use_prompt_as_title or urls:
+        if not urls:
+            raise ValueError("简报选题已勾选但未提供原链接，请粘贴来源 URL")
+        _progress(f"Fetching {len(urls)} source URL(s) directly")
+        candidates = collect_source_url_candidates(urls, limit=10)
+        _progress(f"Collected {len(candidates)} source URL candidates")
+        return candidates
     config = AgentConfig.from_env_file()
     if collector == "baidu_search":
         _progress("Collecting Baidu search candidates")
