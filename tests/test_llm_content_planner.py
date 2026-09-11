@@ -121,15 +121,15 @@ class LLMContentPlannerTests(unittest.TestCase):
 
         updated = apply_llm_content_plan(result, plan, channel="wechat")
 
-        # WeChat published title locks to the creative prompt, not DeepSeek's selected_title.
-        self.assertEqual(updated.topics[0].optimized_title, result.keyword.strip())
+        # Manual keyword runs keep DeepSeek's selected_title by default.
+        self.assertEqual(updated.topics[0].optimized_title, plan.selected_title)
         self.assertEqual(updated.content_plan["core_value"], plan.core_value)
-        self.assertEqual(updated.topics[0].title_candidates[0]["title"], result.keyword.strip())
-        self.assertIn(result.keyword.strip(), updated.wechat_outline)
-        self.assertIn(result.keyword.strip(), updated.cover_prompt)
+        self.assertEqual(updated.topics[0].title_candidates[0]["title"], plan.selected_title)
+        self.assertIn(plan.selected_title, updated.wechat_outline)
+        self.assertIn(plan.selected_title, updated.cover_prompt)
         self.assertIn(plan.cover_concept, updated.cover_prompt)
 
-    def test_wechat_article_title_prefers_original_topic_over_llm_selected(self):
+    def test_briefing_topic_can_lock_prompt_as_title(self):
         from content_agent.models import CandidateContent
         from content_agent.workflow import run_keyword_workflow
 
@@ -152,9 +152,15 @@ class LLMContentPlannerTests(unittest.TestCase):
             ],
         )
         plan = generate_llm_content_plan(FakeLLMProvider(_response("OpenAI推出Agents API公测版")), result, channel="wechat")
-        updated = apply_llm_content_plan(result, plan, channel="wechat")
+        updated = apply_llm_content_plan(result, plan, channel="wechat", use_prompt_as_title=True)
         self.assertEqual(updated.topics[0].optimized_title, topic)
         self.assertNotEqual(updated.topics[0].optimized_title, plan.selected_title)
+
+    def test_manual_keyword_keeps_generated_title(self):
+        result = _workflow_result()
+        plan = generate_llm_content_plan(FakeLLMProvider(_response()), result, channel="wechat")
+        updated = apply_llm_content_plan(result, plan, channel="wechat", use_prompt_as_title=False)
+        self.assertEqual(updated.topics[0].optimized_title, plan.selected_title)
 
     def test_rejects_market_cap_direction_inverted_from_source(self):
         result = run_keyword_workflow(

@@ -569,7 +569,7 @@ class WebTests(unittest.TestCase):
         ), patch(
             "content_agent.web.generate_llm_content_plan", return_value=object()
         ), patch(
-            "content_agent.web.apply_llm_content_plan", side_effect=lambda result, plan, channel: result
+            "content_agent.web.apply_llm_content_plan", side_effect=lambda result, plan, channel, **kwargs: result
         ), patch(
             "content_agent.web.generate_llm_drafts",
             return_value={"xhs_note": "标题：久坐女性的4个习惯\n\n正文：\n\n1. 喝水\n慢慢喝。\n\n标签：#健康养生"},

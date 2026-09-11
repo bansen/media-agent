@@ -69,6 +69,7 @@ class WebRunOptions:
     format_gzh: bool = True
     generate_cover: bool = False
     submit_wechat_draft: bool = False
+    use_prompt_as_title: bool = False
     wechat_content_html: str = ""
     wechat_cover_image: str = ""
     format_theme: str = "moyu-green"
@@ -312,6 +313,7 @@ def _options_to_json(options: WebRunOptions) -> dict:
         "channel": options.channel,
         "collector": options.collector,
         "use_llm": options.use_llm,
+        "use_prompt_as_title": options.use_prompt_as_title,
         "format_gzh": options.format_gzh,
         "generate_cover": options.generate_cover,
         "submit_wechat_draft": options.submit_wechat_draft,
@@ -334,6 +336,7 @@ def _options_from_json(payload: dict | None) -> WebRunOptions:
         format_gzh=bool(payload.get("format_gzh", True)),
         generate_cover=bool(payload.get("generate_cover", False)),
         submit_wechat_draft=bool(payload.get("submit_wechat_draft", False)),
+        use_prompt_as_title=bool(payload.get("use_prompt_as_title", False)),
         wechat_content_html=str(payload.get("wechat_content_html", "")),
         wechat_cover_image=str(payload.get("wechat_cover_image", "")),
         format_theme=str(payload.get("format_theme", "moyu-green")),
@@ -480,7 +483,7 @@ def run_agent_workflow(
         llm = config.build_llm_provider()
         emit("正在用 DeepSeek 提炼核心内容和中文标题")
         content_plan = generate_llm_content_plan(llm, result, channel=options.channel)
-        result = apply_llm_content_plan(result, content_plan, channel=options.channel)
+        result = apply_llm_content_plan(result, content_plan, channel=options.channel, use_prompt_as_title=options.use_prompt_as_title)
         emit("内容策划和标题生成完成")
     payload = _to_jsonable(result)
     payload["cover_prompt"] = _cover_prompt_for_style(str(payload.get("cover_prompt", "")), options.cover_style)
@@ -596,7 +599,7 @@ def run_agent_step(
             llm = AgentConfig.from_env_file().build_llm_provider()
             emit("正在用 DeepSeek 提炼核心内容和中文标题")
             content_plan = generate_llm_content_plan(llm, result, channel=options.channel)
-            result = apply_llm_content_plan(result, content_plan, channel=options.channel)
+            result = apply_llm_content_plan(result, content_plan, channel=options.channel, use_prompt_as_title=options.use_prompt_as_title)
             emit("内容策划和标题生成完成")
         payload = _to_jsonable(result)
         payload["cover_prompt"] = _cover_prompt_for_style(str(payload.get("cover_prompt", "")), options.cover_style)
@@ -613,7 +616,7 @@ def run_agent_step(
         if not workflow_result.content_plan:
             emit("正在用 DeepSeek 提炼核心内容和中文标题")
             content_plan = generate_llm_content_plan(llm, workflow_result, channel=options.channel)
-            workflow_result = apply_llm_content_plan(workflow_result, content_plan, channel=options.channel)
+            workflow_result = apply_llm_content_plan(workflow_result, content_plan, channel=options.channel, use_prompt_as_title=options.use_prompt_as_title)
             payload.update(_to_jsonable(workflow_result))
             emit("内容策划和标题生成完成")
         emit("正在生成正文内容")
@@ -1311,6 +1314,7 @@ def _options_from_payload(payload: dict) -> WebRunOptions:
         format_gzh=bool(payload.get("format_gzh", True)),
         generate_cover=bool(payload.get("generate_cover", False)),
         submit_wechat_draft=bool(payload.get("submit_wechat_draft", False)),
+        use_prompt_as_title=bool(payload.get("use_prompt_as_title", False)),
         wechat_content_html=str(payload.get("wechat_content_html", "")).strip(),
         wechat_cover_image=str(payload.get("wechat_cover_image", "")).strip(),
         format_theme=str(payload.get("format_theme", "moyu-green")).strip() or "moyu-green",
@@ -2264,6 +2268,11 @@ INDEX_HTML = r"""<!doctype html>
         <label for="keyword">创作提示词</label>
         <textarea id="keyword" name="keyword" autocomplete="off">我想写一篇公众号文章，主题是普通人如何用 AI 做副业，目标读者是想赚钱但没方向的打工族，内容要真实、不鸡血，最好有避坑和行动步骤。</textarea>
         <p class="empty" style="margin-top:6px;">把你想写什么、给谁看、希望什么风格写清楚。</p>
+        <label class="checkbox-row" style="display:flex;align-items:center;gap:8px;margin:10px 0 4px;">
+          <input id="usePromptAsTitle" name="use_prompt_as_title" type="checkbox" />
+          <span>简报选题：成稿标题用提示词原文</span>
+        </label>
+        <p class="empty" style="margin-top:0;">仅情报简报选题勾选。手动输入关键词时不要勾，继续智能生成标题。</p>
 
         <label for="channel">渠道</label>
         <select id="channel" name="channel">
@@ -2589,6 +2598,7 @@ INDEX_HTML = r"""<!doctype html>
         format_gzh: false,
         generate_cover: false,
         submit_wechat_draft: false,
+        use_prompt_as_title: document.getElementById("usePromptAsTitle").checked,
         wechat_content_html: "",
         wechat_cover_image: "",
         format_theme: document.getElementById("formatTheme").value,
@@ -2602,6 +2612,7 @@ INDEX_HTML = r"""<!doctype html>
       if (options.keyword) document.getElementById("keyword").value = options.keyword;
       if (options.channel) document.getElementById("channel").value = options.channel;
       if (options.collector) document.getElementById("collector").value = options.collector;
+      document.getElementById("usePromptAsTitle").checked = Boolean(options.use_prompt_as_title);
       if (options.format_theme) document.getElementById("formatTheme").value = options.format_theme;
       if (options.cover_style) document.getElementById("coverStyle").value = options.cover_style;
       if (options.xhs_layout_theme) document.getElementById("xhsLayoutTheme").value = options.xhs_layout_theme;

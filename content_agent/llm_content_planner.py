@@ -121,23 +121,34 @@ def apply_llm_content_plan(
     result: WorkflowResult,
     plan: LLMEditorialPlan,
     channel: ContentChannel,
+    *,
+    use_prompt_as_title: bool = False,
 ) -> WorkflowResult:
     if not result.topics:
         raise ValueError("应用内容策划前必须先选中素材")
     current = result.topics[0]
-    article_title = original_prompt_title(result) or plan.selected_title
-    title_candidates = [
-        {"title": article_title, "score": 1000.0, "reason": "沿用创作提示词原标题"}
-    ]
-    title_candidates.extend(
-        {
-            "title": title,
-            "score": float(100 - index * 3),
-            "reason": "DeepSeek 基于素材核心内容生成（仅备选）",
-        }
-        for index, title in enumerate(plan.titles)
-        if title != article_title
-    )
+    # Only briefing topics should lock the published H1 to the prompt text.
+    # Manual keyword / creative prompts keep DeepSeek's selected_title.
+    if use_prompt_as_title:
+        article_title = original_prompt_title(result) or plan.selected_title
+        title_candidates = [
+            {"title": article_title, "score": 1000.0, "reason": "简报选题：沿用创作提示词原标题"}
+        ]
+        title_candidates.extend(
+            {
+                "title": title,
+                "score": float(100 - index * 3),
+                "reason": "DeepSeek 基于素材核心内容生成（仅备选）",
+            }
+            for index, title in enumerate(plan.titles)
+            if title != article_title
+        )
+    else:
+        article_title = plan.selected_title
+        title_candidates = [
+            {"title": title, "score": float(100 - index * 3), "reason": "DeepSeek 基于素材核心内容生成"}
+            for index, title in enumerate(plan.titles)
+        ]
     selected = replace(
         current,
         optimized_title=article_title,
@@ -201,7 +212,6 @@ def _planning_prompt(result: WorkflowResult, channel: ContentChannel) -> str:
             topic.source_summary.strip() or "未提供摘要。只能使用来源标题中的事实，用户提示词不能当作事实。",
             "",
             "请输出 5 个差异明显、体现具体痛点/能力/结果的候选标题，并选择最佳标题。",
-            "注意：公众号成稿一级标题会固定使用用户创作提示词原文，不会采用你选的 selected_title；候选标题只作内部备选。",
             "所有标题必须使用中文表达；可以保留必要的产品名、AI、PPT、Agent 等专有名词。",
             f"每个标题不超过 {title_limit} 个字符。",
             "标题不得包含链接、README、仓库路径、项目分享、项目资料、值不值得试、核心场景、使用门槛等来源或模板话术。",
