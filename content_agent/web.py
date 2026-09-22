@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
 import json
 import mimetypes
 import threading
@@ -33,6 +34,7 @@ from .collectors.source_urls import (
     resolve_source_urls,
 )
 from .config import AgentConfig
+from .cover_copy import build_image_prompt, prepare_cover_copy
 from .cover_generation import generate_cover_image
 from .database import (
     ContentAssetRow,
@@ -133,7 +135,7 @@ class JobStore:
             raise KeyError(job_id)
         if options is not None:
             self._update(job_id, options=options)
-        validate_step_prerequisites(step, job.result)
+        validate_step_prerequisites(step, job.result, channel=(options or job.options).channel)
         if self._auto_start:
             thread = threading.Thread(target=self._run_job, args=(job_id, step), daemon=True)
             thread.start()
@@ -177,13 +179,14 @@ class JobStore:
         job = self.get(job_id)
         if job is None:
             return
-        self._update(job_id, status="running", event=_step_started_message(step))
+        self._update(job_id, status="running", error="", event=_step_started_message(step))
         try:
             if step == "all":
                 result = run_agent_workflow(
                     job.options,
                     progress=lambda message: self._update(job_id, event=message),
                     package_id=job_id,
+                    checkpoint=lambda payload: self._update(job_id, result=payload),
                 )
             else:
                 result = run_agent_step(
@@ -467,6 +470,7 @@ def run_agent_workflow(
     options: WebRunOptions,
     progress: Callable[[str], None] | None = None,
     package_id: str | None = None,
+    checkpoint: Callable[[dict], None] | None = None,
 ) -> dict:
     _validate_options(options)
     emit = progress or (lambda message: None)
@@ -482,6 +486,13 @@ def run_agent_workflow(
             candidates = build_keyword_seed_candidates(options.keyword, options.channel)
     emit("正在评分并生成选题")
     result = run_keyword_workflow(options.keyword, candidates=candidates, primary_channel=options.channel)
+    payload = _to_jsonable(result)
+
+    def save():
+        if checkpoint:
+            checkpoint(deepcopy(payload))
+
+    save()
     llm = None
     if options.use_llm:
         emit("正在读取模型配置")
@@ -494,10 +505,12 @@ def run_agent_workflow(
     payload = _to_jsonable(result)
     payload["cover_prompt"] = _cover_prompt_for_style(str(payload.get("cover_prompt", "")), options.cover_style)
 
+    save()
     formatted_html = None
     if options.use_llm:
         emit("正在生成正文内容")
         payload["llm_drafts"] = generate_llm_drafts(result, llm, progress=_localized_generation_progress(emit))
+        save()
         emit("正文内容生成完成")
 
     if options.wechat_content_html:
@@ -517,6 +530,7 @@ def run_agent_workflow(
         }
         emit("公众号排版完成")
 
+    save()
     cover_image_path = options.wechat_cover_image
     if cover_image_path:
         payload["cover_image"] = {
@@ -526,8 +540,10 @@ def run_agent_workflow(
             "prompt": payload["cover_prompt"],
             "style": options.cover_style,
         }
+        save()
     if options.generate_cover:
         config = AgentConfig.from_env_file()
+        _prepare_article_cover(payload, options, config, emit)
         emit(f"正在用 {config.image_provider} 生成清晰封面")
         generated_cover = generate_cover_image(
             prompt=str(payload["cover_prompt"]),
@@ -545,7 +561,9 @@ def run_agent_workflow(
             "model": generated_cover.model,
             "prompt": generated_cover.prompt,
             "style": options.cover_style,
+            "headline": payload["cover_copy"]["headline"] if options.channel == "wechat" else "",
         }
+        save()
         emit("封面生成完成")
 
     if options.channel == "xiaohongshu" and (payload.get("llm_drafts") or {}).get("xhs_note"):
@@ -559,6 +577,7 @@ def run_agent_workflow(
             package_id=package_id,
         )
         payload["xhs_layout"] = layout.to_dict()
+        save()
         emit("小红书图文排版完成")
 
     if options.submit_wechat_draft:
@@ -588,7 +607,7 @@ def run_agent_step(
     progress: Callable[[str], None] | None = None,
     package_id: str | None = None,
 ) -> dict:
-    validate_step_prerequisites(step, current_result)
+    validate_step_prerequisites(step, current_result, channel=options.channel)
     emit = progress or (lambda message: None)
     artifact_output_dir = options.output_dir / _safe_basename(package_id) if package_id else options.output_dir
 
@@ -634,7 +653,8 @@ def run_agent_step(
             llm,
             progress=_localized_generation_progress(emit),
         )
-        payload.pop("xhs_layout", None)
+        for key in ("gzh_formatting", "wechat_content_html", "cover_image", "cover_copy", "wechat_draft", "xhs_layout"):
+            payload.pop(key, None)
         emit("正文内容生成完成")
         return payload
 
@@ -648,13 +668,18 @@ def run_agent_step(
             "clean_html": str(paths.clean_html),
             "preview_html": str(paths.preview_html),
         }
+        if payload.pop("wechat_content_html", None):
+            for key in ("cover_image", "cover_copy", "xhs_layout"):
+                payload.pop(key, None)
+        payload.pop("wechat_draft", None)
         emit("公众号排版完成")
         return payload
 
     if step == "cover":
         config = AgentConfig.from_env_file()
+        _prepare_article_cover(payload, options, config, emit)
         emit(f"正在用 {config.image_provider} 生成清晰封面")
-        prompt = _cover_prompt_for_style(str(payload.get("cover_prompt", "")), options.cover_style)
+        prompt = payload["cover_prompt"]
         generated_cover = generate_cover_image(
             prompt=prompt,
             output_dir=artifact_output_dir,
@@ -671,8 +696,10 @@ def run_agent_step(
             "model": generated_cover.model,
             "prompt": generated_cover.prompt,
             "style": options.cover_style,
+            "headline": payload["cover_copy"]["headline"] if options.channel == "wechat" else "",
         }
         payload.pop("xhs_layout", None)
+        payload.pop("wechat_draft", None)
         emit("封面生成完成")
         return payload
 
@@ -1347,7 +1374,7 @@ def _parse_step(step: str) -> StepName:
     raise ValueError("未知步骤")
 
 
-def validate_step_prerequisites(step: StepName, result: dict | None) -> None:
+def validate_step_prerequisites(step: StepName, result: dict | None, channel: str = "wechat") -> None:
     if step in {"materials", "all"}:
         return
     if not result or not result.get("topics"):
@@ -1356,8 +1383,10 @@ def validate_step_prerequisites(step: StepName, result: dict | None) -> None:
         return
     if step == "format" and not (result.get("llm_drafts") or {}).get("wechat_article"):
         raise ValueError("请先生成内容，再进行公众号排版")
-    if step == "cover" and not result.get("cover_prompt"):
-        raise ValueError("请先搜素材，再生成封面")
+    if step == "cover":
+        article_key = "xhs_note" if channel == "xiaohongshu" else "wechat_article"
+        if not (result.get("llm_drafts") or {}).get(article_key) and not (channel == "wechat" and result.get("wechat_content_html")):
+            raise ValueError("请先生成当前渠道的正文，再生成封面")
     if step == "xhs-layout" and not (result.get("llm_drafts") or {}).get("xhs_note"):
         raise ValueError("请先生成小红书内容，再进行图文排版")
     if step == "submit":
@@ -1380,6 +1409,17 @@ def _validate_options(options: WebRunOptions) -> None:
     _cover_prompt_for_style("workspace cover", options.cover_style)
     if options.xhs_layout_theme != "auto" and options.xhs_layout_theme not in XHS_LAYOUT_THEMES:
         raise ValueError("不支持的小红书图文主题")
+
+
+def _prepare_article_cover(payload: dict, options: WebRunOptions, config: AgentConfig, emit: Callable[[str], None]) -> None:
+    emit("正在根据最终正文提炼封面文案和画面")
+    copy = prepare_cover_copy(payload, options.channel, config.build_llm_provider())
+    payload["cover_copy"] = asdict(copy)
+    payload["cover_prompt"] = build_image_prompt(copy, options.channel, options.cover_style)
+    if options.channel == "wechat":
+        emit(f"封面文案：{copy.headline}")
+    else:
+        emit("封面底图不含文字，标题由小红书图文排版添加")
 
 
 def _cover_prompt_for_style(prompt: str, cover_style: str) -> str:
@@ -2537,6 +2577,7 @@ INDEX_HTML = r"""<!doctype html>
         eventsEl.innerHTML += `<p class="error">${escapeHtml(job.error)}</p>`;
       }
       if (job.result) renderResult(job.result);
+      setBusy(["queued", "running", "publishing"].includes(job.status));
     }
 
     async function loadHistory() {
@@ -2661,6 +2702,7 @@ INDEX_HTML = r"""<!doctype html>
       const coverClass = xhsNote ? "cover xhs-cover" : "cover";
       const draft = result.wechat_draft ? JSON.stringify(result.wechat_draft.response, null, 2) : "";
       assetsEl.innerHTML = [
+        result.cover_image?.headline ? `<p><strong>封面文案：</strong>${escapeHtml(result.cover_image.headline)}</p>` : "",
         xhsLayout && xhsLayout.zip_path
           ? `<div class="xhs-package-summary"><strong>图文发布包已就绪</strong><span class="empty">共 ${Number((xhsLayout.cards || []).length)} 张 3:4 高清图片</span><a href="/file?path=${encodeURIComponent(xhsLayout.zip_path)}" download>打包下载全部图片</a></div>`
           : coverPath ? `<img class="${coverClass}" src="/file?path=${encodeURIComponent(coverPath)}"><p class="path">${escapeHtml(coverPath)}</p><a class="login" href="/file?path=${encodeURIComponent(coverPath)}" target="_blank" rel="noopener">打开/保存封面图</a>` : "",

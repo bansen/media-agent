@@ -11,6 +11,7 @@ from PIL import Image
 
 from content_agent.config import AgentConfig
 from content_agent.cover_generation import SeedreamHttpRunner, generate_cover_image
+from tests.test_cover_copy import ARTICLE, FakeLLM
 
 
 class SeedreamTests(unittest.TestCase):
@@ -22,16 +23,25 @@ class SeedreamTests(unittest.TestCase):
         with patch.dict(os.environ, {"IMAGE_PROVIDER": "seedream", "ARK_API_KEY": "ark-secret", "SEEDREAM_MODEL": "my-model"}):
             config = AgentConfig.from_env_file("/nonexistent-seedream-env")
         with tempfile.TemporaryDirectory() as tmp:
-            options = WebRunOptions(keyword="AI工具", use_llm=False, format_gzh=False, generate_cover=True, output_dir=Path(tmp))
+            options = WebRunOptions(keyword="AI工具", use_llm=True, format_gzh=False, generate_cover=True, output_dir=Path(tmp))
             cover = GeneratedCover(Path(tmp) / "cover.jpg", "https://example.com/cover.jpg", "my-model", "cover")
-            with patch("content_agent.web.AgentConfig.from_env_file", return_value=config), patch("content_agent.web._collect_candidates", return_value=get_mock_candidates("AI副业", channel="wechat")), patch("content_agent.web.generate_cover_image", return_value=cover) as generate:
+            llm = FakeLLM()
+            with patch("content_agent.web.AgentConfig.from_env_file", return_value=config), patch("content_agent.web._collect_candidates", return_value=get_mock_candidates("AI副业", channel="wechat")), patch("content_agent.web.generate_cover_image", return_value=cover) as generate, patch.object(AgentConfig, "build_llm_provider", return_value=llm), patch("content_agent.web.generate_llm_content_plan"), patch("content_agent.web.apply_llm_content_plan", side_effect=lambda result, *args, **kwargs: result), patch("content_agent.web.generate_llm_drafts", return_value={"wechat_article": ARTICLE}):
                 payload = run_agent_workflow(options)
-                run_agent_step(options, "cover", payload)
+                payload["cover_prompt"] = "old prompt 16:9 full-bleed"
+                regenerated = run_agent_step(options, "cover", payload)
+            self.assertEqual(regenerated["cover_copy"]["headline"], "让 AI 分工写文章")
+            self.assertEqual(regenerated["cover_image"]["headline"], "让 AI 分工写文章")
+            self.assertEqual(len(llm.prompts), 2)
             self.assertEqual(generate.call_count, 2)
             for call in generate.call_args_list:
                 self.assertEqual(call.kwargs["provider"], "seedream")
                 self.assertEqual(call.kwargs["api_token"], "ark-secret")
                 self.assertEqual(call.kwargs["model"], "my-model")
+                self.assertIn("唯一允许出现的文字", call.kwargs["prompt"])
+                self.assertIn("让 AI 分工写文章", call.kwargs["prompt"])
+                self.assertNotIn("16:9", call.kwargs["prompt"])
+                self.assertNotIn("full-bleed", call.kwargs["prompt"])
 
     def test_config_selects_seedream_without_exposing_key(self):
         with patch.dict(os.environ, {"IMAGE_PROVIDER": "seedream", "ARK_API_KEY": "ark-secret", "SEEDREAM_MODEL": "my-model"}):

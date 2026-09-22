@@ -154,6 +154,10 @@ The web workbench persists each generated run as a content record:
 - Reuses the same collectors, LLM generation, gzh-design formatting, Replicate cover generation, and WeChat draft submission functions as the CLI.
 - Serves generated preview HTML and cover files from `output/` for local inspection.
 
+One-click jobs save completed material selection, content planning, article, formatting, cover, and Xiaohongshu layout stages in the database. If a later stage fails, select the failed record and continue with the individual step buttons; the article does not need to be generated again. A successful retry clears the previous error.
+
+Regenerating content invalidates the previous formatting, cover, layout and current draft-submission marker. Reformatting or replacing a cover allows submitting the revised version while preserving historical submission attempts. Switching from an imported HTML article to the generated article also invalidates its cover; changing only the formatting theme preserves it.
+
 Local development defaults to `sqlite:///output/content_agent.db` if `DATABASE_URL` is not set. Production Docker Compose runs PostgreSQL and injects:
 
 ```env
@@ -238,13 +242,11 @@ Local configuration belongs in `.env`; production configuration belongs in `/opt
 
 Both one-click generation and individual cover regeneration use this setting. Seedream requests one image at 2560x1440 for WeChat or 1728x2304 for Xiaohongshu, then saves the existing delivery sizes (1600x900 / 1080x1440) locally. Choose a model supporting these sizes; API failures stop generation without silently switching to another paid provider. Visible AI watermarks are enabled.
 
-Existing installations default to Replicate. Set `IMAGE_PROVIDER=replicate` to switch back. The recommended production approach is:
+Cover generation now requires the final article for the selected channel. The configured LLM extracts a short Chinese headline (up to 24 characters), a visual scene, and an exact supporting quote from that article. The saved `cover_copy` records these fields and the article fingerprint; `cover_image.prompt` records the actual image request. Old planning prompts are not reused when regenerating a cover.
 
-```text
-Replicate generates the background image -> local renderer overlays Chinese title text
-```
+WeChat prompts explicitly allow only the extracted headline as visible text. Image dimensions are set through API parameters, not written into the prompt. Xiaohongshu still requests a text-free background because its existing local layout renderer adds the note title. This change does not add OCR or a WeChat text overlay: generated lettering can still be inaccurate and must be reviewed before submitting a draft. CLI cover generation requires `--use-llm` or an existing `--wechat-content-html` article. When an existing HTML article is selected, its extracted text is the cover source; scripts, styles and markup are excluded. Cover validation also rejects known factual reversals using the same fact checks as article generation.
 
-This avoids unstable Chinese text rendering inside image-generation models.
+Existing installations default to Replicate. Set `IMAGE_PROVIDER=replicate` to switch back.
 
 Configure Replicate like this:
 

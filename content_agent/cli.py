@@ -10,6 +10,7 @@ from .collectors.baidu_search import collect_baidu_search_candidates
 from .collectors.source_urls import collect_source_url_candidates, resolve_source_urls
 from .config import AgentConfig
 from .cover_generation import generate_cover_image
+from .cover_copy import build_image_prompt, prepare_cover_copy
 from .formatters.wechat_gzh import format_wechat_markdown, write_gzh_outputs
 from .generation import generate_llm_drafts
 from .keyword_seed import build_keyword_seed_candidates
@@ -59,6 +60,9 @@ def main(argv: list[str] | None = None) -> int:
         config = AgentConfig.from_env_file()
         print(json.dumps(config.redacted_status(), ensure_ascii=False, indent=2))
         return 0
+    if args.generate_cover and not args.use_llm and not (args.channel == "wechat" and args.wechat_content_html):
+        print("生成封面需要最终正文，请使用 --use-llm 或提供 --wechat-content-html。", file=sys.stderr)
+        return 2
     if args.submit_wechat_draft and not args.wechat_cover_image and not args.generate_cover:
         print("--wechat-cover-image is required when --submit-wechat-draft is used without --generate-cover", file=sys.stderr)
         return 2
@@ -119,9 +123,13 @@ def main(argv: list[str] | None = None) -> int:
     cover_image_path = args.wechat_cover_image
     if args.generate_cover:
         config = AgentConfig.from_env_file()
+        _progress("正在根据最终正文提炼封面文案和画面")
+        cover_copy = prepare_cover_copy(payload, args.channel, config.build_llm_provider())
+        payload["cover_copy"] = _to_jsonable(cover_copy)
+        payload["cover_prompt"] = build_image_prompt(cover_copy, args.channel, "business-tech")
         _progress(f"Generating cover image with {config.image_provider}")
         generated_cover = generate_cover_image(
-            prompt=result.cover_prompt,
+            prompt=payload["cover_prompt"],
             output_dir=Path(args.output_dir),
             basename=_safe_basename(args.keyword),
             model=config.image_model,
@@ -134,6 +142,8 @@ def main(argv: list[str] | None = None) -> int:
             "path": str(generated_cover.path),
             "url": generated_cover.url,
             "model": generated_cover.model,
+            "prompt": generated_cover.prompt,
+            "headline": cover_copy.headline if args.channel == "wechat" else "",
         }
         _progress("Finished cover generation")
     if args.submit_wechat_draft:

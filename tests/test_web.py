@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from content_agent.models import CandidateContent
 from content_agent.config import AgentConfig
+from tests.test_cover_copy import FakeLLM
 from content_agent.web import (
     SESSION_COOKIE,
     ContentAgentHandler,
@@ -517,7 +518,7 @@ class WebTests(unittest.TestCase):
             {"to_dict": lambda self: {"theme": "fresh-green", "cards": [{"path": "output/01-cover.jpg"}], "zip_path": "output/package.zip"}},
         )()
 
-        with patch("content_agent.web.AgentConfig.from_env_file", return_value=config), patch(
+        with patch.object(AgentConfig, "build_llm_provider", return_value=FakeLLM(headline="久坐女性的习惯", evidence="慢慢喝。")), patch("content_agent.web.AgentConfig.from_env_file", return_value=config), patch(
             "content_agent.web.collect_baidu_search_candidates", return_value=[candidate]
         ), patch(
             "content_agent.web.generate_llm_content_plan", return_value=object()
@@ -627,6 +628,10 @@ class WebTests(unittest.TestCase):
             )
         with self.assertRaisesRegex(ValueError, "请先生成小红书内容"):
             validate_step_prerequisites("xhs-layout", {"topics": [{}]})
+        with self.assertRaisesRegex(ValueError, "先生成当前渠道的正文"):
+            validate_step_prerequisites("cover", {"topics": [{}], "cover_prompt": "old prompt"})
+        with self.assertRaisesRegex(ValueError, "先生成当前渠道的正文"):
+            validate_step_prerequisites("cover", {"topics": [{}], "llm_drafts": {"wechat_article": "旧正文"}}, channel="xiaohongshu")
 
     def test_xiaohongshu_layout_step_uses_note_and_cover_background(self):
         current = {
@@ -683,6 +688,7 @@ class WebTests(unittest.TestCase):
         with patch("content_agent.web.AgentConfig.from_env_file") as config:
             config.return_value.replicate_cover_model = "mock"
             config.return_value.replicate_api_token = "token"
+            config.return_value.build_llm_provider.return_value = FakeLLM(headline="秋季养生", evidence="秋季养生")
             with patch("content_agent.web.generate_cover_image", return_value=generated):
                 payload = run_agent_step(
                     WebRunOptions(keyword="秋季养生", channel="xiaohongshu"),
@@ -719,6 +725,7 @@ class WebTests(unittest.TestCase):
         current = {
             "topics": [{"title": "秋季养生"}],
             "cover_prompt": "cover prompt",
+            "llm_drafts": {"wechat_article": "秋季养生"},
             "xhs_layout": {"cards": [{"path": "output/old.jpg"}], "zip_path": "output/old.zip"},
         }
         generated = type("Cover", (), {"path": Path("output/new.jpg"), "url": "", "model": "mock", "prompt": "cover prompt"})()
@@ -726,6 +733,7 @@ class WebTests(unittest.TestCase):
         with patch("content_agent.web.AgentConfig.from_env_file") as config:
             config.return_value.replicate_cover_model = "mock"
             config.return_value.replicate_api_token = "token"
+            config.return_value.build_llm_provider.return_value = FakeLLM(headline="秋季养生", evidence="秋季养生")
             with patch("content_agent.web.generate_cover_image", return_value=generated):
                 payload = run_agent_step(
                     WebRunOptions(keyword="秋季养生", channel="wechat"),

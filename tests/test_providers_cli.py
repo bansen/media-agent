@@ -9,6 +9,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from content_agent.cli import main
+from content_agent.config import AgentConfig
+from tests.test_cover_copy import ARTICLE, FakeLLM
 from content_agent.models import CandidateContent
 from content_agent.providers.image import ReplicateImageProvider
 from content_agent.providers.llm import OpenAICompatibleLLMProvider
@@ -20,6 +22,7 @@ class FakeGeneratedCover:
     path: Path
     url: str
     model: str
+    prompt: str = "mock image prompt"
 
 
 class FakeTwoStageLLM:
@@ -56,6 +59,12 @@ def _editorial_plan_json() -> str:
 
 
 class ProviderCliTests(unittest.TestCase):
+    def test_cover_without_final_article_stops_before_collection(self):
+        with patch("sys.stderr", io.StringIO()), patch("content_agent.cli._collect_candidates") as collect:
+            status = main(["--keyword", "AI写作", "--generate-cover"])
+        self.assertEqual(status, 2)
+        collect.assert_not_called()
+
     def test_cli_use_llm_generates_plan_before_article(self):
         llm = FakeTwoStageLLM()
         config = type("Config", (), {"build_llm_provider": lambda self: llm})()
@@ -270,7 +279,7 @@ class ProviderCliTests(unittest.TestCase):
         stdout = io.StringIO()
         stderr = io.StringIO()
 
-        with tempfile.TemporaryDirectory() as tmpdir, redirect_stdout(stdout), patch("sys.stderr", stderr), patch(
+        with patch.object(AgentConfig, "build_llm_provider", return_value=FakeLLM()), patch("content_agent.cli.generate_llm_content_plan"), patch("content_agent.cli.apply_llm_content_plan", side_effect=lambda result, *args, **kwargs: result), patch("content_agent.cli.generate_llm_drafts", return_value={"wechat_article": ARTICLE}), tempfile.TemporaryDirectory() as tmpdir, redirect_stdout(stdout), patch("sys.stderr", stderr), patch(
             "content_agent.cli.collect_baidu_search_candidates", return_value=[_baidu_candidate()]
         ), patch(
             "content_agent.cli.generate_cover_image",
@@ -279,7 +288,7 @@ class ProviderCliTests(unittest.TestCase):
                 url="https://replicate.delivery/mock/output.jpg",
                 model="black-forest-labs/flux-1.1-pro",
             ),
-        ), patch("content_agent.cli.publish_wechat_draft") as publish:
+        ) as image, patch("content_agent.cli.publish_wechat_draft") as publish:
             publish.return_value.thumb_media_id = "MEDIA_ID"
             publish.return_value.response = {"errcode": 0, "media_id": "DRAFT_ID"}
             exit_code = main(
@@ -291,6 +300,7 @@ class ProviderCliTests(unittest.TestCase):
                     "--format-gzh",
                     "--submit-wechat-draft",
                     "--generate-cover",
+                    "--use-llm",
                     "--output-dir",
                     tmpdir,
                 ]
@@ -298,12 +308,16 @@ class ProviderCliTests(unittest.TestCase):
 
         self.assertNotEqual(exit_code, 2)
         self.assertNotIn("--wechat-cover-image is required", stderr.getvalue())
+        self.assertIn("唯一允许出现的文字", image.call_args.kwargs["prompt"])
+        self.assertIn("让 AI 分工写文章", image.call_args.kwargs["prompt"])
+        self.assertNotIn("1600x900", image.call_args.kwargs["prompt"])
+        self.assertEqual(json.loads(stdout.getvalue())["cover_copy"]["headline"], "让 AI 分工写文章")
 
     def test_cli_returns_partial_payload_when_wechat_submit_fails(self):
         stdout = io.StringIO()
         stderr = io.StringIO()
 
-        with tempfile.TemporaryDirectory() as tmpdir, redirect_stdout(stdout), patch("sys.stderr", stderr), patch(
+        with patch.object(AgentConfig, "build_llm_provider", return_value=FakeLLM()), patch("content_agent.cli.generate_llm_content_plan"), patch("content_agent.cli.apply_llm_content_plan", side_effect=lambda result, *args, **kwargs: result), patch("content_agent.cli.generate_llm_drafts", return_value={"wechat_article": ARTICLE}), tempfile.TemporaryDirectory() as tmpdir, redirect_stdout(stdout), patch("sys.stderr", stderr), patch(
             "content_agent.cli.collect_baidu_search_candidates", return_value=[_baidu_candidate()]
         ), patch(
             "content_agent.cli.generate_cover_image",
@@ -322,6 +336,7 @@ class ProviderCliTests(unittest.TestCase):
                     "--format-gzh",
                     "--submit-wechat-draft",
                     "--generate-cover",
+                    "--use-llm",
                     "--output-dir",
                     tmpdir,
                 ]
