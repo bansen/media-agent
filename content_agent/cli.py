@@ -36,7 +36,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check-config", action="store_true", help="Print redacted configuration status.")
     parser.add_argument("--use-llm", action="store_true", help="Generate channel drafts with the configured LLM.")
     parser.add_argument("--format-gzh", action="store_true", help="Format the WeChat draft with gzh-design skill assets.")
-    parser.add_argument("--generate-cover", action="store_true", help="Generate a cover image with Replicate.")
+    parser.add_argument("--generate-cover", action="store_true", help="Generate a cover image with the configured image provider.")
     parser.add_argument("--submit-wechat-draft", action="store_true", help="Submit the formatted WeChat article to draft box.")
     parser.add_argument("--wechat-content-html", help="Existing formatted WeChat HTML file to submit.")
     parser.add_argument("--wechat-cover-image", help="Local cover image path used as WeChat thumb material.")
@@ -118,14 +118,16 @@ def main(argv: list[str] | None = None) -> int:
         _progress("Finished gzh-design formatting")
     cover_image_path = args.wechat_cover_image
     if args.generate_cover:
-        _progress("Generating cover image with Replicate")
         config = AgentConfig.from_env_file()
+        _progress(f"Generating cover image with {config.image_provider}")
         generated_cover = generate_cover_image(
             prompt=result.cover_prompt,
             output_dir=Path(args.output_dir),
             basename=_safe_basename(args.keyword),
-            model=config.replicate_cover_model,
-            api_token=config.replicate_api_token,
+            model=config.image_model,
+            api_token=config.image_api_key,
+            provider=config.image_provider,
+            aspect_ratio="3:4" if args.channel == "xiaohongshu" else "16:9",
         )
         cover_image_path = str(generated_cover.path)
         payload["cover_image"] = {
@@ -133,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
             "url": generated_cover.url,
             "model": generated_cover.model,
         }
-        _progress("Finished Replicate cover generation")
+        _progress("Finished cover generation")
     if args.submit_wechat_draft:
         _progress("Submitting WeChat draft")
         config = AgentConfig.from_env_file()

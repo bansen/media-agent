@@ -224,7 +224,21 @@ LLM_API_KEY=your_key
 
 ## Image Strategy
 
-Replicate is used as an image provider boundary. The recommended production approach is:
+Set `IMAGE_PROVIDER=seedream` to generate covers through the official Volcengine Ark API:
+
+```env
+IMAGE_PROVIDER=seedream
+ARK_API_KEY=your_ark_key
+SEEDREAM_MODEL=your_enabled_model_id
+```
+
+Copy the complete model ID (or endpoint ID) from the Ark console's API example. Enable that model in the same account as the API key. Seedream is billed separately from Jimeng consumer subscriptions. Never commit real API keys.
+
+Local configuration belongs in `.env`; production configuration belongs in `/opt/media-agent/.env.production`. After updating production configuration, recreate the app container with `docker compose --env-file .env.production -f docker-compose.prod.yml up -d app`.
+
+Both one-click generation and individual cover regeneration use this setting. Seedream requests one image at 2560x1440 for WeChat or 1728x2304 for Xiaohongshu, then saves the existing delivery sizes (1600x900 / 1080x1440) locally. Choose a model supporting these sizes; API failures stop generation without silently switching to another paid provider. Visible AI watermarks are enabled.
+
+Existing installations default to Replicate. Set `IMAGE_PROVIDER=replicate` to switch back. The recommended production approach is:
 
 ```text
 Replicate generates the background image -> local renderer overlays Chinese title text

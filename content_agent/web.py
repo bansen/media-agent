@@ -527,14 +527,15 @@ def run_agent_workflow(
             "style": options.cover_style,
         }
     if options.generate_cover:
-        emit("正在用 Replicate 生成清晰封面")
         config = AgentConfig.from_env_file()
+        emit(f"正在用 {config.image_provider} 生成清晰封面")
         generated_cover = generate_cover_image(
             prompt=str(payload["cover_prompt"]),
             output_dir=artifact_output_dir,
             basename=_safe_basename(options.keyword),
-            model=config.replicate_cover_model,
-            api_token=config.replicate_api_token,
+            model=config.image_model,
+            api_token=config.image_api_key,
+            provider=config.image_provider,
             aspect_ratio="3:4" if options.channel == "xiaohongshu" else "16:9",
         )
         cover_image_path = str(generated_cover.path)
@@ -651,15 +652,16 @@ def run_agent_step(
         return payload
 
     if step == "cover":
-        emit("正在用 Replicate 生成清晰封面")
         config = AgentConfig.from_env_file()
+        emit(f"正在用 {config.image_provider} 生成清晰封面")
         prompt = _cover_prompt_for_style(str(payload.get("cover_prompt", "")), options.cover_style)
         generated_cover = generate_cover_image(
             prompt=prompt,
             output_dir=artifact_output_dir,
             basename=_safe_basename(options.keyword),
-            model=config.replicate_cover_model,
-            api_token=config.replicate_api_token,
+            model=config.image_model,
+            api_token=config.image_api_key,
+            provider=config.image_provider,
             aspect_ratio="3:4" if options.channel == "xiaohongshu" else "16:9",
         )
         payload["cover_prompt"] = prompt

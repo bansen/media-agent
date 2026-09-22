@@ -37,6 +37,9 @@ class AgentConfig:
     wechat_component_auth_redirect_uri: str = ""
     wechat_component_verify_ticket: str = ""
     wechat_component_access_token: str = ""
+    image_provider: str = "replicate"
+    ark_api_key: str = ""
+    seedream_model: str = ""
 
     @classmethod
     def from_env_file(cls, path: str | Path = ".env") -> "AgentConfig":
@@ -45,6 +48,9 @@ class AgentConfig:
         if env_path.exists():
             values.update(_parse_env_file(env_path))
         return cls(
+            image_provider=values.get("IMAGE_PROVIDER", "replicate").strip().lower(),
+            ark_api_key=values.get("ARK_API_KEY", ""),
+            seedream_model=values.get("SEEDREAM_MODEL", ""),
             llm_provider=values.get("LLM_PROVIDER", "deepseek"),
             llm_base_url=values.get("LLM_BASE_URL", "https://api.deepseek.com"),
             llm_model=values.get("LLM_MODEL", "deepseek-chat"),
@@ -77,6 +83,9 @@ class AgentConfig:
 
     def redacted_status(self) -> dict[str, str]:
         return {
+            "IMAGE_PROVIDER": self.image_provider,
+            "ARK_API_KEY": "SET" if self.ark_api_key else "EMPTY",
+            "SEEDREAM_MODEL": self.seedream_model or "EMPTY",
             "LLM_PROVIDER": self.llm_provider or "EMPTY",
             "LLM_BASE_URL": "SET" if self.llm_base_url else "EMPTY",
             "LLM_MODEL": self.llm_model or "EMPTY",
@@ -108,6 +117,14 @@ class AgentConfig:
             base_url=self.llm_base_url,
             model=self.llm_model,
         )
+
+    @property
+    def image_model(self) -> str:
+        return self.seedream_model if self.image_provider == "seedream" else self.replicate_cover_model
+
+    @property
+    def image_api_key(self) -> str:
+        return self.ark_api_key if self.image_provider == "seedream" else self.replicate_api_token
 
     def build_image_provider(self) -> ReplicateImageProvider:
         return ReplicateImageProvider(
