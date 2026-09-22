@@ -34,11 +34,11 @@ class CoverCopyTests(unittest.TestCase):
         self.assertEqual(copy.headline, "让 AI 分工写文章")
         self.assertEqual(len(copy.article_sha256), 64)
 
-    def test_title_is_the_only_allowed_image_text_and_has_no_size_instructions(self):
+    def test_wechat_cover_is_text_free_and_has_no_size_instructions(self):
         copy = cover_copy.prepare_cover_copy({"llm_drafts": {"wechat_article": ARTICLE}}, "wechat", FakeLLM())
         prompt = cover_copy.build_image_prompt(copy, "wechat", "business-tech")
-        self.assertIn("唯一允许出现的文字", prompt)
-        self.assertEqual(prompt.count(copy.headline), 1)
+        self.assertIn("不要生成任何文字", prompt)
+        self.assertNotIn(copy.headline, prompt)
         for leaked in ["16:9", "1600", "900", "full-bleed", "negative", "No text", "AIWriteX 通过"]:
             self.assertNotIn(leaked, prompt)
 

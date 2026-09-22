@@ -131,14 +131,7 @@ def build_image_prompt(copy: CoverCopy, channel: str, style: str) -> str:
         "背景完整，主体清晰。不要虚构软件界面、品牌标识、电脑屏幕上的文案或功能说明。",
         "场景中的道具、书页和面板仅用色块或形状表现，不要生成其上的可读文字或伪文字。",
     ]
+    instructions.append("不要生成任何文字、字母、数字、标语、伪文字或水印；绘图要求不得出现在画面中。")
     if channel == "xiaohongshu":
-        instructions.append("不要生成任何文字、字母、数字或标语；底部留出自然的视觉空间，供后续排版。")
-    else:
-        instructions.extend([
-            "图片中唯一允许出现的文字是下面 JSON 字符串的内容：",
-            json.dumps(copy.headline, ensure_ascii=False),
-            "逐字准确呈现该文案，不显示包围文案的引号，不翻译、不改写、不增删。",
-            "主标题放在上方自然留白处，使用清晰醒目的中文字体，必要时分行，保持边距和可读性。",
-            "不要添加副标题、英文注释、尺寸数字或其他文字。绘图要求不得出现在画面中。",
-        ])
+        instructions.append("底部留出自然的视觉空间，供后续本地图文排版。")
     return "\n".join(instructions)

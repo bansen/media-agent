@@ -38,8 +38,8 @@ class SeedreamTests(unittest.TestCase):
                 self.assertEqual(call.kwargs["provider"], "seedream")
                 self.assertEqual(call.kwargs["api_token"], "ark-secret")
                 self.assertEqual(call.kwargs["model"], "my-model")
-                self.assertIn("唯一允许出现的文字", call.kwargs["prompt"])
-                self.assertIn("让 AI 分工写文章", call.kwargs["prompt"])
+                self.assertIn("不要生成任何文字", call.kwargs["prompt"])
+                self.assertNotIn("让 AI 分工写文章", call.kwargs["prompt"])
                 self.assertNotIn("16:9", call.kwargs["prompt"])
                 self.assertNotIn("full-bleed", call.kwargs["prompt"])
 

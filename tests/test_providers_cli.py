@@ -308,8 +308,8 @@ class ProviderCliTests(unittest.TestCase):
 
         self.assertNotEqual(exit_code, 2)
         self.assertNotIn("--wechat-cover-image is required", stderr.getvalue())
-        self.assertIn("唯一允许出现的文字", image.call_args.kwargs["prompt"])
-        self.assertIn("让 AI 分工写文章", image.call_args.kwargs["prompt"])
+        self.assertIn("不要生成任何文字", image.call_args.kwargs["prompt"])
+        self.assertNotIn("让 AI 分工写文章", image.call_args.kwargs["prompt"])
         self.assertNotIn("1600x900", image.call_args.kwargs["prompt"])
         self.assertEqual(json.loads(stdout.getvalue())["cover_copy"]["headline"], "让 AI 分工写文章")
 

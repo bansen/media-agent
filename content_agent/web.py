@@ -1417,7 +1417,7 @@ def _prepare_article_cover(payload: dict, options: WebRunOptions, config: AgentC
     payload["cover_copy"] = asdict(copy)
     payload["cover_prompt"] = build_image_prompt(copy, options.channel, options.cover_style)
     if options.channel == "wechat":
-        emit(f"封面文案：{copy.headline}")
+        emit(f"已提炼备选封面文案（当前不绘制到图片）：{copy.headline}")
     else:
         emit("封面底图不含文字，标题由小红书图文排版添加")
 
@@ -2702,7 +2702,7 @@ INDEX_HTML = r"""<!doctype html>
       const coverClass = xhsNote ? "cover xhs-cover" : "cover";
       const draft = result.wechat_draft ? JSON.stringify(result.wechat_draft.response, null, 2) : "";
       assetsEl.innerHTML = [
-        result.cover_image?.headline ? `<p><strong>封面文案：</strong>${escapeHtml(result.cover_image.headline)}</p>` : "",
+        result.cover_image?.headline ? `<p><strong>备选封面文案（未绘制）：</strong>${escapeHtml(result.cover_image.headline)}</p>` : "",
         xhsLayout && xhsLayout.zip_path
           ? `<div class="xhs-package-summary"><strong>图文发布包已就绪</strong><span class="empty">共 ${Number((xhsLayout.cards || []).length)} 张 3:4 高清图片</span><a href="/file?path=${encodeURIComponent(xhsLayout.zip_path)}" download>打包下载全部图片</a></div>`
           : coverPath ? `<img class="${coverClass}" src="/file?path=${encodeURIComponent(coverPath)}"><p class="path">${escapeHtml(coverPath)}</p><a class="login" href="/file?path=${encodeURIComponent(coverPath)}" target="_blank" rel="noopener">打开/保存封面图</a>` : "",
