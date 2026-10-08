@@ -92,7 +92,7 @@ def _requires_cover_text(scene: str) -> bool:
     pattern = r"计分(?:牌|屏)|比分(?:牌|屏)|行情(?:看板|屏|数据)|(?:显示|标出|标注|写上|写着).{0,20}(?:数字|文字|名称|数据|跌幅)|数据图表"
     for match in re.finditer(pattern, scene):
         prefix = scene[max(0, match.start()-12):match.start()]
-        if not re.search(r"(?:不(?:要|使用|包含|出现|展示)?|禁止(?:出现|使用)?|避免(?:出现|使用)?|没有|无(?:任何)?)(?:任何)?$", prefix):
+        if not re.search(r"(?:不(?:要)?(?:使用|用|包含|包括|出现|展示|设置|显示)?|禁止(?:出现|使用|展示)?|避免(?:出现|使用|展示)?|没有|无(?:任何)?)(?:任何)?$", prefix):
             return True
     return False
 

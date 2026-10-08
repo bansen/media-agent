@@ -37,5 +37,5 @@ class CompletionRegressions(unittest.TestCase):
             with self.subTest(scene=scene),self.assertRaisesRegex(ValueError,'无字|文字|数字|计分|行情'):
                 prepare_cover_copy({'llm_drafts':{'wechat_article':ARTICLE}},'wechat',FakeLLM(scene=scene))
         self.assertTrue(prepare_cover_copy({'llm_drafts':{'wechat_article':ARTICLE}},'wechat',FakeLLM(scene='抽象的半导体芯片与无标签色块，以几何造型表现主题。')).scene)
-        for scene in ['球拍与球台构成主体，不显示文字和数字。','芯片与无标签色块构成主体，不使用行情看板。']:
+        for scene in ['球拍与球台构成主体，不显示文字和数字。','芯片与无标签色块构成主体，不使用行情看板。','球拍和球台，不用计分牌。','芯片和色块，不用行情看板。','球拍和球台，不要出现计分屏。']:
             self.assertTrue(prepare_cover_copy({'llm_drafts':{'wechat_article':ARTICLE}},'wechat',FakeLLM(scene=scene)).scene)
