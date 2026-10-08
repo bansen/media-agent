@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 FALL_TERMS = ("蒸发", "暴跌", "大跌", "跌停", "腰斩", "缩水")
 RISE_TERMS = ("大涨", "暴涨", "飙涨", "涨停", "市值增加")
 MARKET_SUBJECTS = ("市值", "股价")
@@ -33,7 +35,34 @@ def factual_conflicts(source: str, generated: str) -> list[str]:
     if _compresses_multi_day_move_into_one_day(source_text, generated_text):
         issues.append("素材不是一天内的市值变化，不得写成一天蒸发或一天大涨")
 
+    issues.extend(_score_margin_conflicts(source_text, generated_text))
     return issues
+
+
+def _score_margin_conflicts(source: str, generated: str) -> list[str]:
+    """Check explicit largest-margin claims only when a score list is available."""
+    if "比分" not in source:
+        return []
+    score = re.compile(r"(?<!\d)(\d{1,2})\s*(?:比|[-–:：])\s*(\d{1,2})(?!\d)")
+    # Require a delimited list; avoid combining unrelated scores from page chrome.
+    lists = re.findall(r"\d{1,2}\s*(?:比|[-–:：])\s*\d{1,2}(?:\s*[、，,]\s*\d{1,2}\s*(?:比|[-–:：])\s*\d{1,2}){2,}", source)
+    if len(lists) != 1:
+        return []
+    pairs = [(int(a), int(b)) for a, b in score.findall(lists[0])]
+    largest = max(abs(a - b) for a, b in pairs)
+    sentences = re.split(r"[。！？\n]", generated)
+    for index, sentence in enumerate(sentences):
+        if not re.search(r"分差最大|最大分差", sentence) or re.search(r"不|并非|未必|是否|吗", sentence):
+            continue
+        matches = score.findall(sentence)
+        if not matches and index and re.search(r"这|决胜局|末局", sentence):
+            matches = score.findall(sentences[index - 1])
+        if not matches:
+            continue
+        a, b = map(int, matches[-1])
+        if (a, b) in pairs and abs(a - b) < largest:
+            return [f"比分计算错误：{a}比{b}的分差是{abs(a-b)}，原文比分最大分差为{largest}，不能称为最大分差"]
+    return []
 
 
 def source_facts(*parts: str) -> str:

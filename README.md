@@ -158,6 +158,8 @@ One-click jobs save completed material selection, content planning, article, for
 
 Regenerating content invalidates the previous formatting, cover, layout and current draft-submission marker. Reformatting or replacing a cover allows submitting the revised version while preserving historical submission attempts. Switching from an imported HTML article to the generated article also invalidates its cover; changing only the formatting theme preserves it.
 
+WeChat drafts have no minimum length. The retrieved source, rather than the editorial plan, is the factual authority. An independent call to the configured LLM checks the final title and article, returning quoted claims, source evidence and failure reasons. One targeted repair is allowed; a second rejection or unavailable/invalid review stops the workflow and preserves the rejected draft. Cover generation requires a current review. Submission separately checks the actual HTML and published title, including imported HTML and legacy records. Reports are bound to source and article hashes; changed content must be checked again. These checks reduce unsupported claims but do not establish that the original source itself is true.
+
 Local development defaults to `sqlite:///output/content_agent.db` if `DATABASE_URL` is not set. Production Docker Compose runs PostgreSQL and injects:
 
 ```env

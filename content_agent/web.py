@@ -47,6 +47,8 @@ from .database import (
 )
 from .formatters.wechat_gzh import format_wechat_markdown, theme_label, write_gzh_outputs
 from .generation import generate_llm_drafts
+from .fact_review import FactReviewError
+from .publication_review import ensure_article_review, retain_rejected_draft
 from .keyword_seed import build_keyword_seed_candidates
 from .llm_content_planner import apply_llm_content_plan, generate_llm_content_plan
 from .models import TopicBrief, TopicScore, WorkflowResult
@@ -198,7 +200,7 @@ class JobStore:
                 )
             self._update(job_id, status=_status_for_result(result), result=result, event=_step_finished_message(step))
         except Exception as exc:
-            self._update(job_id, status="failed", error=str(exc), event=f"步骤失败：{exc}")
+            self._update(job_id, status="failed", result=getattr(exc, "payload", None), error=str(exc), event=f"步骤失败：{exc}")
 
     def _update(
         self,
@@ -509,7 +511,12 @@ def run_agent_workflow(
     formatted_html = None
     if options.use_llm:
         emit("正在生成正文内容")
-        payload["llm_drafts"] = generate_llm_drafts(result, llm, progress=_localized_generation_progress(emit))
+        try:
+            payload["llm_drafts"] = generate_llm_drafts(result, llm, progress=_localized_generation_progress(emit))
+        except FactReviewError as exc:
+            retain_rejected_draft(payload, exc)
+            save()
+            raise
         save()
         emit("正文内容生成完成")
 
@@ -585,6 +592,8 @@ def run_agent_workflow(
             raise ValueError("当前渠道不支持提交公众号草稿箱")
         emit("正在提交公众号草稿箱")
         config = AgentConfig.from_env_file()
+        ensure_article_review(result, payload, config.build_llm_provider(), formatted_html or "")
+        save()
         published = publish_wechat_draft(
             result=result,
             content_html=formatted_html or "",
@@ -633,7 +642,7 @@ def run_agent_step(
         payload["cover_prompt"] = _cover_prompt_for_style(str(payload.get("cover_prompt", "")), options.cover_style)
         return payload
 
-    payload = dict(current_result or {})
+    payload = deepcopy(current_result or {})
     if step == "format" and options.channel != "wechat":
         raise ValueError("小红书渠道无需公众号排版")
     if step == "content":
@@ -648,12 +657,14 @@ def run_agent_step(
             payload.update(_to_jsonable(workflow_result))
             emit("内容策划和标题生成完成")
         emit("正在生成正文内容")
-        payload["llm_drafts"] = generate_llm_drafts(
-            workflow_result,
-            llm,
-            progress=_localized_generation_progress(emit),
-        )
-        for key in ("gzh_formatting", "wechat_content_html", "cover_image", "cover_copy", "wechat_draft", "xhs_layout"):
+        try:
+            payload["llm_drafts"] = generate_llm_drafts(
+                workflow_result, llm, progress=_localized_generation_progress(emit),
+            )
+        except FactReviewError as exc:
+            retain_rejected_draft(payload, exc)
+            raise
+        for key in ("gzh_formatting", "wechat_content_html", "cover_image", "cover_copy", "wechat_draft", "xhs_layout", "fact_review", "publication_fact_review"):
             payload.pop(key, None)
         emit("正文内容生成完成")
         return payload
@@ -744,8 +755,10 @@ def submit_previewed_wechat_draft(
     emit("正在从预览提交公众号草稿箱")
     content_html = Path(html_path).read_text(encoding="utf-8")
     config = config or AgentConfig.from_env_file()
+    workflow_result = _workflow_result_from_payload(result_payload)
+    ensure_article_review(workflow_result, result_payload, config.build_llm_provider(), content_html)
     published = publish_wechat_draft(
-        result=_workflow_result_from_payload(result_payload),
+        result=workflow_result,
         content_html=content_html,
         cover_image_path=cover_path,
         config=config,
@@ -792,7 +805,7 @@ def submit_stored_previewed_wechat_draft(
             raise KeyError(job_id)
         return submitted
     except Exception as exc:
-        store._update(job_id, status="failed", error=str(exc), event=f"草稿箱提交失败：{exc}")
+        store._update(job_id, status="failed", result=getattr(exc, "payload", None), error=str(exc), event=f"草稿箱提交失败：{exc}")
         store.record_publish_attempt(
             job_id,
             platform="wechat",
@@ -1412,6 +1425,9 @@ def _validate_options(options: WebRunOptions) -> None:
 
 
 def _prepare_article_cover(payload: dict, options: WebRunOptions, config: AgentConfig, emit: Callable[[str], None]) -> None:
+    if options.channel == "wechat":
+        emit("正在确认最终正文的事实核查结果")
+        ensure_article_review(_workflow_result_from_payload(payload), payload, config.build_llm_provider())
     emit("正在根据最终正文提炼封面文案和画面")
     copy = prepare_cover_copy(payload, options.channel, config.build_llm_provider())
     payload["cover_copy"] = asdict(copy)

@@ -11,6 +11,7 @@ from unittest.mock import patch
 from content_agent.cli import main
 from content_agent.config import AgentConfig
 from tests.test_cover_copy import ARTICLE, FakeLLM
+from tests.test_generation import passing_review_response
 from content_agent.models import CandidateContent
 from content_agent.providers.image import ReplicateImageProvider
 from content_agent.providers.llm import OpenAICompatibleLLMProvider
@@ -32,6 +33,8 @@ class FakeTwoStageLLM:
 
     def generate(self, prompt: str) -> str:
         self.prompts.append(prompt)
+        if prompt.startswith("FACT_REVIEW_V1"):
+            return passing_review_response(prompt)
         return next(self.responses)
 
 
@@ -95,7 +98,8 @@ class ProviderCliTests(unittest.TestCase):
 
         payload = json.loads(stdout.getvalue())
         self.assertEqual(exit_code, 0)
-        self.assertEqual(len(llm.prompts), 2)
+        self.assertEqual(len(llm.prompts), 3)
+        self.assertTrue(llm.prompts[2].startswith("FACT_REVIEW_V1"))
         self.assertIn("请先做内容策划，不要写正文", llm.prompts[0])
         self.assertIn("公众号文案创作", llm.prompts[1])
         self.assertEqual(payload["topics"][0]["optimized_title"], "Agency Agents：把岗位职责变成一支 AI 团队")
@@ -359,7 +363,7 @@ class ProviderCliTests(unittest.TestCase):
             cover_image = Path(tmpdir) / "cover.jpg"
             cover_image.write_bytes(b"fake-image")
 
-            with redirect_stdout(stdout), patch("sys.stderr", stderr), patch(
+            with patch("content_agent.cli.ensure_article_review") as review, redirect_stdout(stdout), patch("sys.stderr", stderr), patch(
                 "content_agent.cli.collect_baidu_search_candidates", return_value=[_baidu_candidate()]
             ), patch(
                 "content_agent.cli.generate_cover_image"
@@ -384,6 +388,8 @@ class ProviderCliTests(unittest.TestCase):
 
         payload = json.loads(stdout.getvalue())
         self.assertEqual(exit_code, 0)
+        review.assert_called_once()
+        self.assertEqual(review.call_args.args[3], "<section>已经排版好的正文</section>")
         self.assertEqual(payload["wechat_content_html"], str(content_html))
         generate_cover.assert_not_called()
         format_markdown.assert_not_called()

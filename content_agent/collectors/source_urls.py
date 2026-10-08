@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import html
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from typing import Protocol
 from urllib import request
@@ -133,13 +133,7 @@ def _extract_title_and_text(body: str, url: str, final_url: str) -> tuple[str, s
     parsed.feed(body)
     parsed.close()
     title = _clean_text(html.unescape(parsed.title)) or _title_from_meta(body) or _title_from_url(url)
-    content = _clean_text(html.unescape(parsed.text))
-    if len(content) < 40:
-        # Fallback for pages where the parser misses content.
-        stripped = re.sub(r"(?is)<(script|style|noscript|svg)[^>]*>.*?</\1>", " ", body)
-        stripped = re.sub(r"(?is)<!--.*?-->", " ", stripped)
-        stripped = re.sub(r"(?is)<[^>]+>", " ", stripped)
-        content = _clean_text(html.unescape(stripped))
+    content = parsed.text
     if not content:
         raise RuntimeError("页面正文为空")
     return title, _summary_for(title, content, max_chars=4000)
@@ -195,54 +189,114 @@ def _signal(text: str, terms: list[str]) -> int:
     return sum(6 for term in terms if term.lower() in text.lower())
 
 
+_VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
+_BLOCK_TAGS = {"p", "div", "li", "h1", "h2", "h3", "h4", "h5", "h6", "tr", "section", "article", "main", "blockquote", "pre"}
+_SKIP_TAGS = {"head", "title", "script", "style", "noscript", "svg", "iframe", "header", "footer", "nav", "aside", "template"}
+_BODY_MARKERS = {"article-body", "article-content", "articlebody", "entry-content", "post-content", "story-body", "story-content", "rich-media-content", "js-content"}
+_NOISE_MARKERS = {
+    "ad", "ads", "advert", "advertisement", "advertising", "ad-container", "ad-slot", "ad-wrapper",
+    "related", "related-posts", "related-articles", "related-content", "related-stories",
+    "recommend", "recommended", "recommendation", "recommendations", "recommended-articles",
+    "recommended-posts", "navigation", "nav", "sidebar", "social-share", "share-buttons",
+    "article-card", "post-card", "story-card",
+}
+
+
+@dataclass
+class _HtmlNode:
+    tag: str
+    attrs: dict[str, str] = field(default_factory=dict)
+    children: list[_HtmlNode | str] = field(default_factory=list)
+
+    @property
+    def markers(self) -> set[str]:
+        return set((self.attrs.get("id", "") + " " + self.attrs.get("class", "")).lower().replace("_", "-").split())
+
+    @property
+    def skipped(self) -> bool:
+        return (
+            self.tag in _SKIP_TAGS
+            or bool(self.markers & _NOISE_MARKERS)
+            or self.attrs.get("role", "").lower() in {"navigation", "banner", "contentinfo", "complementary"}
+        )
+
+    @property
+    def is_article_body(self) -> bool:
+        return bool(self.markers & _BODY_MARKERS) or "articlebody" in self.attrs.get("itemprop", "").lower().split()
+
+    def nodes(self):
+        if not self.skipped:
+            yield self
+            for child in self.children:
+                if isinstance(child, _HtmlNode):
+                    yield from child.nodes()
+
+    def render(self) -> str:
+        if self.skipped:
+            return ""
+        if self.tag == "br":
+            return "\n"
+        # Normalize source indentation, but preserve spaces across inline tags.
+        text = "".join(child.render() if isinstance(child, _HtmlNode) else re.sub(r"\s+", " ", child) for child in self.children)
+        return f"\n\n{text}\n\n" if self.tag in _BLOCK_TAGS else text
+
+    def text(self) -> str:
+        text = re.sub(r" *\n *", "\n", self.render())
+        return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
 class _HtmlTextExtractor(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.title = ""
-        self.text_parts: list[str] = []
+        self._root = _HtmlNode("")
+        self._stack = [self._root]
         self._capture_title = False
-        self._skip_depth = 0
-        self._in_body = False
 
     @property
     def text(self) -> str:
-        return " ".join(self.text_parts)
+        nodes = list(self._root.nodes())
+        # A main region prevents unrelated article cards elsewhere from winning.
+        mains = [node for node in nodes if (node.tag == "main" or node.attrs.get("role") == "main") and node.text()]
+        scope = max(mains, key=lambda node: len(node.text())) if mains else self._root
+        candidates = [node for node in scope.nodes() if node.is_article_body or node.tag == "article"]
+        candidates = [node for node in candidates if node.text()]
+        if candidates:
+            scope = max(candidates, key=lambda node: (node.is_article_body, len(node.text())))
+        return scope.text()
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        lower = tag.lower()
-        if lower in {"script", "style", "noscript", "svg", "iframe", "header", "footer", "nav", "aside"}:
-            self._skip_depth += 1
-            return
-        if lower == "title" and self._skip_depth == 0:
-            self._capture_title = True
-            return
-        if lower == "body":
-            self._in_body = True
-        if lower in {"br", "p", "div", "li", "h1", "h2", "h3", "h4", "tr", "section", "article"} and self._skip_depth == 0:
-            self.text_parts.append(" ")
+        if tag == "body":
+            # HTML permits </head> to be omitted before the body starts.
+            self.handle_endtag("head")
+            self._capture_title = False
+        if tag == "title":
+            self._capture_title = not self.title and not any(
+                node.skipped and node.tag != "head" for node in self._stack
+            )
+        node = _HtmlNode(tag, {key: value or "" for key, value in attrs})
+        self._stack[-1].children.append(node)
+        if tag not in _VOID_TAGS:
+            self._stack.append(node)
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.handle_starttag(tag, attrs)
+        if tag not in _VOID_TAGS:
+            self.handle_endtag(tag)
 
     def handle_endtag(self, tag: str) -> None:
-        lower = tag.lower()
-        if lower in {"script", "style", "noscript", "svg", "iframe", "header", "footer", "nav", "aside"}:
-            self._skip_depth = max(0, self._skip_depth - 1)
-            return
-        if lower == "title":
+        if tag == "title":
             self._capture_title = False
-        if lower == "body":
-            self._in_body = False
+        # Close only an actual open element; stray closes never alter filtering.
+        for index in range(len(self._stack) - 1, 0, -1):
+            if self._stack[index].tag == tag:
+                del self._stack[index:]
+                break
 
     def handle_data(self, data: str) -> None:
-        if self._skip_depth:
-            return
-        chunk = data.strip()
-        if not chunk:
-            return
-        if self._capture_title and not self.title:
-            self.title = chunk
-            return
         if self._capture_title:
-            return
-        self.text_parts.append(chunk)
+            self.title += data
+        self._stack[-1].children.append(data)
 
 
 def is_http_url(value: str) -> bool:

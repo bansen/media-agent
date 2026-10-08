@@ -41,20 +41,39 @@ class _ArticleTextParser(HTMLParser):
         super().__init__()
         self.parts = []
         self.hidden = 0
+        self.in_head = False
+        self.head_text_tag = ""
 
     def handle_starttag(self, tag, attrs):
+        # Both </head> and <body> may be omitted in valid HTML.
+        if self.in_head and tag not in {"head", "title", "base", "link", "meta", "style", "script", "noscript"}:
+            self.hidden = max(0, self.hidden - 1)
+            self.in_head = False
+        if tag == "head":
+            self.in_head = True
+        if self.in_head and tag in {"title", "style", "script", "noscript"}:
+            self.head_text_tag = tag
         if tag in {"script", "style", "head", "noscript", "svg"}:
             self.hidden += 1
         if not self.hidden and tag in {"p", "div", "section", "br", "li", "h1", "h2", "h3", "h4"}:
             self.parts.append("\n")
 
     def handle_endtag(self, tag):
+        if tag == self.head_text_tag:
+            self.head_text_tag = ""
+        if tag == "head":
+            if not self.in_head:
+                return
+            self.in_head = False
         if tag in {"script", "style", "head", "noscript", "svg"}:
             self.hidden = max(0, self.hidden - 1)
         elif not self.hidden and tag in {"p", "div", "section", "li", "h1", "h2", "h3", "h4"}:
             self.parts.append("\n")
 
     def handle_data(self, data):
+        if self.in_head and not self.head_text_tag and data.strip():
+            self.hidden = max(0, self.hidden - 1)
+            self.in_head = False
         if not self.hidden:
             self.parts.append(data)
 

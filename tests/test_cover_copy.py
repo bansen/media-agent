@@ -2,6 +2,7 @@ import json
 import unittest
 
 from content_agent import cover_copy
+from tests.test_generation import passing_review_response
 
 
 ARTICLE = "# AIWriteX：让 AI 分工写文章\n\nAIWriteX 通过多个智能体协作，完成资料整理与文章创作。仍需人工核实和审核。"
@@ -9,7 +10,8 @@ ARTICLE = "# AIWriteX：让 AI 分工写文章\n\nAIWriteX 通过多个智能体
 
 class FakeLLM:
     def __init__(self, **updates):
-        self.prompts = []
+        self.prompts = []  # Cover-copy prompts; audit calls are tracked separately.
+        self.review_prompts = []
         self.response = {
             "headline": "让 AI 分工写文章",
             "scene": "多个不同颜色的角色围绕一条内容创作流水线协作，主体位于右侧",
@@ -18,6 +20,9 @@ class FakeLLM:
         }
 
     def generate(self, prompt):
+        if prompt.startswith("FACT_REVIEW_V1"):
+            self.review_prompts.append(prompt)
+            return passing_review_response(prompt)
         self.prompts.append(prompt)
         return json.dumps(self.response, ensure_ascii=False)
 

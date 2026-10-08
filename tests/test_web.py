@@ -2,11 +2,12 @@ import unittest
 import json
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from content_agent.models import CandidateContent
 from content_agent.config import AgentConfig
 from tests.test_cover_copy import FakeLLM
+from tests.test_generation import passing_review_response
 from content_agent.web import (
     SESSION_COOKIE,
     ContentAgentHandler,
@@ -37,6 +38,8 @@ class TwoStageLLMProvider:
 
     def generate(self, prompt: str) -> str:
         self.prompts.append(prompt)
+        if prompt.startswith("FACT_REVIEW_V1"):
+            return passing_review_response(prompt)
         return next(self.responses)
 
 
@@ -167,7 +170,8 @@ class WebTests(unittest.TestCase):
                 )
             )
 
-        self.assertEqual(len(llm.prompts), 2)
+        self.assertEqual(len(llm.prompts), 3)
+        self.assertTrue(llm.prompts[2].startswith("FACT_REVIEW_V1"))
         self.assertIn("请先做内容策划，不要写正文", llm.prompts[0])
         self.assertIn("公众号文案创作", llm.prompts[1])
         self.assertEqual(payload["topics"][0]["optimized_title"], "Agency Agents：把岗位职责变成一支 AI 团队")
@@ -723,6 +727,7 @@ class WebTests(unittest.TestCase):
 
     def test_switching_channel_then_regenerating_cover_discards_old_xhs_layout(self):
         current = {
+            "keyword": "秋季养生",
             "topics": [{"title": "秋季养生"}],
             "cover_prompt": "cover prompt",
             "llm_drafts": {"wechat_article": "秋季养生"},
@@ -878,7 +883,7 @@ class WebTests(unittest.TestCase):
             )
             events = []
 
-            with patch("content_agent.web.AgentConfig.from_env_file", return_value=object()), patch(
+            with patch("content_agent.web.ensure_article_review") as review, patch("content_agent.web.AgentConfig.from_env_file", return_value=Mock()), patch(
                 "content_agent.web.publish_wechat_draft"
             ) as publish:
                 publish.return_value.thumb_media_id = "MEDIA_ID"
@@ -886,6 +891,8 @@ class WebTests(unittest.TestCase):
 
                 result = submit_previewed_wechat_draft(job, progress=events.append)
 
+        review.assert_called_once()
+        self.assertEqual(review.call_args.args[3], "<p>已预览内容</p>")
         self.assertEqual(result["wechat_draft"]["thumb_media_id"], "MEDIA_ID")
         self.assertIn("正在从预览提交公众号草稿箱", events)
         self.assertEqual(publish.call_args.kwargs["content_html"], "<p>已预览内容</p>")
@@ -934,11 +941,13 @@ class WebTests(unittest.TestCase):
             }
             store._update(job.id, status="preview_ready", result=result_payload, event="Job completed")
 
-            with patch("content_agent.web.publish_wechat_draft") as publish:
+            with patch("content_agent.web.ensure_article_review") as review, patch("content_agent.web.publish_wechat_draft") as publish:
                 publish.return_value.thumb_media_id = "MEDIA_ID"
                 publish.return_value.response = {"errcode": 0, "media_id": "DRAFT_ID"}
-                submitted = submit_stored_previewed_wechat_draft(store, job.id, config=object())
+                submitted = submit_stored_previewed_wechat_draft(store, job.id, config=Mock())
 
+        review.assert_called_once()
+        self.assertEqual(review.call_args.args[3], "<p>已预览内容</p>")
         self.assertEqual(submitted.status, "published_draft")
         self.assertEqual(submitted.result["wechat_draft"]["thumb_media_id"], "MEDIA_ID")
         self.assertIn("开始提交草稿箱", submitted.events)

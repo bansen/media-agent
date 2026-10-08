@@ -33,6 +33,7 @@ class SeedreamTests(unittest.TestCase):
             self.assertEqual(regenerated["cover_copy"]["headline"], "让 AI 分工写文章")
             self.assertEqual(regenerated["cover_image"]["headline"], "让 AI 分工写文章")
             self.assertEqual(len(llm.prompts), 2)
+            self.assertEqual(len(llm.review_prompts), 1)  # Unchanged article reuses its review.
             self.assertEqual(generate.call_count, 2)
             for call in generate.call_args_list:
                 self.assertEqual(call.kwargs["provider"], "seedream")

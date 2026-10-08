@@ -6,6 +6,7 @@ from content_agent.collectors.websearch_mcp import (
 )
 from content_agent.generation import generate_llm_drafts
 from content_agent.workflow import run_keyword_workflow
+from tests.test_generation import passing_review_response
 
 
 class FakeMCPRunner:
@@ -24,6 +25,8 @@ class FakeLLMProvider:
 
     def generate(self, prompt):
         self.prompts.append(prompt)
+        if prompt.startswith("FACT_REVIEW_V1"):
+            return passing_review_response(prompt)
         return "正文"
 
 
@@ -228,6 +231,8 @@ class WebSearchMCPTests(unittest.TestCase):
         self.assertIn("素材摘要：", llm.prompts[0])
         self.assertIn("bansen/media-agent", llm.prompts[0])
         self.assertIn("公众号草稿箱", llm.prompts[0])
+        self.assertEqual(len(llm.prompts), 2)
+        self.assertTrue(llm.prompts[1].startswith("FACT_REVIEW_V1"))
 
 
 if __name__ == "__main__":

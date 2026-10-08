@@ -36,7 +36,7 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(config.wechat_app_id, "wx-server-app")
 
     def test_server_owner_config_requires_login_password_and_wechat_credentials(self):
-        with patch.dict("os.environ", {"WECHAT_APP_ID": "wx-server-app"}, clear=True):
+        with patch.dict("os.environ", {"WECHAT_APP_ID": "wx-server-app"}, clear=True), patch("content_agent.auth._read_env_value", return_value=""):
             config = ServerOwnerConfig.from_env()
 
         self.assertFalse(config.is_configured())

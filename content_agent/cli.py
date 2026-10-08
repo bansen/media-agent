@@ -13,6 +13,8 @@ from .cover_generation import generate_cover_image
 from .cover_copy import build_image_prompt, prepare_cover_copy
 from .formatters.wechat_gzh import format_wechat_markdown, write_gzh_outputs
 from .generation import generate_llm_drafts
+from .fact_review import FactReviewError
+from .publication_review import ensure_article_review, retain_rejected_draft
 from .keyword_seed import build_keyword_seed_candidates
 from .llm_content_planner import apply_llm_content_plan, generate_llm_content_plan
 from .wechat_publish import publish_wechat_draft
@@ -101,7 +103,13 @@ def main(argv: list[str] | None = None) -> int:
     payload = _to_jsonable(result)
     if args.use_llm:
         _progress("Starting LLM draft generation")
-        payload["llm_drafts"] = generate_llm_drafts(result, llm, progress=_progress)
+        try:
+            payload["llm_drafts"] = generate_llm_drafts(result, llm, progress=_progress)
+        except FactReviewError as exc:
+            retain_rejected_draft(payload, exc)
+            payload["error"] = str(exc)
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 1
         _progress("Finished LLM draft generation")
     formatted_html = None
     if args.wechat_content_html:
@@ -123,6 +131,13 @@ def main(argv: list[str] | None = None) -> int:
     cover_image_path = args.wechat_cover_image
     if args.generate_cover:
         config = AgentConfig.from_env_file()
+        if args.channel == "wechat":
+            try:
+                ensure_article_review(result, payload, config.build_llm_provider())
+            except FactReviewError as exc:
+                payload["error"] = str(exc)
+                print(json.dumps(payload, ensure_ascii=False, indent=2))
+                return 1
         _progress("正在根据最终正文提炼封面文案和画面")
         cover_copy = prepare_cover_copy(payload, args.channel, config.build_llm_provider())
         payload["cover_copy"] = _to_jsonable(cover_copy)
@@ -150,6 +165,7 @@ def main(argv: list[str] | None = None) -> int:
         _progress("Submitting WeChat draft")
         config = AgentConfig.from_env_file()
         try:
+            ensure_article_review(result, payload, config.build_llm_provider(), formatted_html or "")
             published = publish_wechat_draft(
                 result=result,
                 content_html=formatted_html or "",

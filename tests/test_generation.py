@@ -1,3 +1,4 @@
+import json
 import unittest
 from dataclasses import replace
 
@@ -7,23 +8,49 @@ from content_agent.models import CandidateContent
 from content_agent.workflow import run_keyword_workflow
 
 
+def passing_review_response(prompt: str) -> str:
+    """Model a successful independent review using literal input quotations."""
+    payload = json.loads(prompt.split("INPUT_JSON:\n", 1)[1])
+    source = payload["source"]
+    return json.dumps({
+        "verdict": "pass",
+        "checks": [{
+            "claim": payload["article"],
+            "source_quote": source["body"] or source["title"],
+        }],
+        "issues": [],
+    }, ensure_ascii=False)
+
+
 class FakeLLMProvider:
     def __init__(self, response: str = "模型生成内容"):
         self.prompts = []
+        self.draft_prompts = []
+        self.review_prompts = []
         self.response = response
 
     def generate(self, prompt: str) -> str:
         self.prompts.append(prompt)
+        if prompt.startswith("FACT_REVIEW_V1"):
+            self.review_prompts.append(prompt)
+            return passing_review_response(prompt)
+        self.draft_prompts.append(prompt)
         return self.response
 
 
 class SequenceLLMProvider:
     def __init__(self, responses: list[str]):
         self.prompts = []
+        self.draft_prompts = []
+        self.review_prompts = []
         self.responses = iter(responses)
 
     def generate(self, prompt: str) -> str:
         self.prompts.append(prompt)
+        if prompt.startswith("FACT_REVIEW_V1"):
+            self.review_prompts.append(prompt)
+            return passing_review_response(prompt)
+        self.draft_prompts.append(prompt)
         return next(self.responses)
 
 
@@ -53,9 +80,11 @@ class GenerationTests(unittest.TestCase):
         self.assertIn("模型生成内容", drafts["wechat_article"])
         self.assertNotIn("xhs_note", drafts)
         self.assertNotIn("baijiahao_article", drafts)
-        self.assertEqual(len(llm.prompts), 1)
+        self.assertEqual(len(llm.draft_prompts), 1)
+        self.assertEqual(len(llm.review_prompts), 1)
         self.assertIn("公众号", llm.prompts[0])
         self.assertIn("不要承诺日更或固定更新频率", llm.prompts[0])
+        self.assertIn("不设最低字数，篇幅由原文信息量决定", llm.prompts[0])
 
     def test_wechat_content_uses_persisted_llm_plan_and_wechat_skill(self):
         result = run_keyword_workflow(
@@ -100,7 +129,8 @@ class GenerationTests(unittest.TestCase):
         self.assertIn("公众号文案创作", prompt)
         self.assertIn("把岗位职责和协作流程变成可运行的 AI 团队", prompt)
         self.assertIn("冲突开场 -> 岗位机制 -> 协作流程 -> 使用场景 -> 边界判断", prompt)
-        self.assertIn("内容策划是事实与结构的唯一主线", prompt)
+        self.assertIn("原文优先，策划中的无依据结论必须舍弃", prompt)
+        self.assertIn("不为填满小节补写信息", prompt)
         self.assertIn("不要询问用户上传风格", prompt)
         self.assertTrue(drafts["wechat_article"].startswith(f"# {selected_title}"))
 
@@ -143,7 +173,8 @@ class GenerationTests(unittest.TestCase):
 
         drafts = generate_llm_drafts(result, llm)
 
-        self.assertEqual(len(llm.prompts), 1)
+        self.assertEqual(len(llm.draft_prompts), 1)
+        self.assertEqual(len(llm.review_prompts), 1)
         self.assertIn("自动关闭实例", drafts["wechat_article"])
 
     def test_generates_only_xhs_note_for_xiaohongshu_channel(self):
@@ -154,7 +185,8 @@ class GenerationTests(unittest.TestCase):
 
         self.assertEqual(drafts["xhs_note"], "模型生成内容")
         self.assertNotIn("wechat_article", drafts)
-        self.assertEqual(len(llm.prompts), 1)
+        self.assertEqual(len(llm.draft_prompts), 1)
+        self.assertEqual(len(llm.review_prompts), 0)
         self.assertIn("小红书", llm.prompts[0])
         self.assertIn("Xiaohongshu Content Skill", llm.prompts[0])
         self.assertIn("Viral hooks", llm.prompts[0])
@@ -377,9 +409,10 @@ class GenerationTests(unittest.TestCase):
 
         drafts = generate_llm_drafts(result, llm)
 
-        self.assertEqual(len(llm.prompts), 2)
-        self.assertIn("上一次正文偏离项目主题", llm.prompts[1])
-        self.assertIn("Agent 记忆或上下文", llm.prompts[1])
+        self.assertEqual(len(llm.draft_prompts), 2)
+        self.assertEqual(len(llm.review_prompts), 2)
+        self.assertIn("只修订下列核查指出的问题", llm.draft_prompts[1])
+        self.assertIn("Agent 记忆或上下文", llm.draft_prompts[1])
         self.assertIn("高清成片", drafts["wechat_article"])
         self.assertNotIn("Agent 经常跑偏", drafts["wechat_article"])
 
@@ -426,6 +459,9 @@ class GenerationTests(unittest.TestCase):
 
         self.assertTrue(drafts["wechat_article"].startswith(f"# {result.topics[0].optimized_title}"))
         self.assertNotIn("# 别急着学AI", drafts["wechat_article"])
+        reviewed = json.loads(llm.review_prompts[0].split("INPUT_JSON:\n", 1)[1])
+        self.assertEqual(reviewed["article"], drafts["wechat_article"])
+        self.assertEqual(drafts["fact_review"]["status"], "passed")
 
     def test_knowledge_workflow_prompt_and_forced_title_share_one_topic(self):
         result = run_keyword_workflow(
@@ -490,6 +526,7 @@ class GenerationTests(unittest.TestCase):
             events,
             [
                 "Generating wechat_article with LLM",
+                "正在独立核查标题、正文与原文事实",
             ],
         )
 
@@ -558,6 +595,8 @@ class FactualGenerationTests(unittest.TestCase):
 
         self.assertIn("市值大涨", drafts["wechat_article"])
         self.assertNotIn("蒸发", drafts["wechat_article"])
-        self.assertEqual(len(llm.prompts), 2)
-        self.assertIn("事实红线", llm.prompts[0])
-        self.assertIn("不得写成蒸发", llm.prompts[1])
+        self.assertEqual(len(llm.draft_prompts), 2)
+        self.assertEqual(len(llm.review_prompts), 1)
+        self.assertIn("事实红线", llm.draft_prompts[0])
+        self.assertIn("不得写成蒸发", llm.draft_prompts[1])
+        self.assertEqual(drafts["fact_review"]["status"], "passed")
