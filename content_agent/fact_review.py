@@ -10,7 +10,7 @@ from typing import Protocol
 from .factual_guard import factual_conflicts
 from .models import WorkflowResult
 
-REVIEW_VERSION = 1
+REVIEW_VERSION = 2
 REVIEW_MARKER = "FACT_REVIEW_V1"
 
 

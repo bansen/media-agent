@@ -36,7 +36,19 @@ def factual_conflicts(source: str, generated: str) -> list[str]:
         issues.append("素材不是一天内的市值变化，不得写成一天蒸发或一天大涨")
 
     issues.extend(_score_margin_conflicts(source_text, generated_text))
+    if "不明原因肺炎" in source_text and "鼠疫" in source_text:
+        if _plague_exclusion_claims(generated_text) and not _plague_exclusion_claims(source_text):
+            issues.append("原文仅诊断不明原因肺炎，未发现相关微生物不能升级为非鼠疫感染、排除鼠疫或辟谣鼠疫死亡；保留病因未明及消息归属")
     return issues
+
+
+def _plague_exclusion_claims(text: str) -> bool:
+    pattern = r"排除(?:了)?鼠疫|(?:并非|而非|不是|非)鼠疫(?:感染)?|(?:否认|未)感染鼠疫|否认鼠疫感染|辟谣鼠疫(?:感染|死亡)?|鼠疫(?:感染|死亡)?(?:已被|已)?辟谣"
+    for match in re.finditer(pattern, text):
+        prefix = re.split(r"[，。；\n]", text[max(0, match.start()-24):match.start()])[-1]
+        if not re.search(r"(?:未|没有|不)$|(?:不能|不可|尚未|并未|无法|不代表|不等于|未能|没有证据)[^，。；\n]{0,10}$", prefix):
+            return True
+    return False
 
 
 def _score_margin_conflicts(source: str, generated: str) -> list[str]:

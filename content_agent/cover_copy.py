@@ -88,6 +88,15 @@ def _final_article(payload: dict, channel: str) -> str:
     return str((payload.get("llm_drafts") or {}).get(key) or "").strip()
 
 
+def _requires_cover_text(scene: str) -> bool:
+    pattern = r"计分(?:牌|屏)|比分(?:牌|屏)|行情(?:看板|屏|数据)|(?:显示|标出|标注|写上|写着).{0,20}(?:数字|文字|名称|数据|跌幅)|数据图表"
+    for match in re.finditer(pattern, scene):
+        prefix = scene[max(0, match.start()-12):match.start()]
+        if not re.search(r"(?:不(?:要|使用|包含|出现|展示)?|禁止(?:出现|使用)?|避免(?:出现|使用)?|没有|无(?:任何)?)(?:任何)?$", prefix):
+            return True
+    return False
+
+
 def prepare_cover_copy(payload: dict, channel: str, llm: TextProvider) -> CoverCopy:
     if channel not in {"wechat", "xiaohongshu"}:
         raise ValueError("不支持的封面渠道")
@@ -101,6 +110,7 @@ def prepare_cover_copy(payload: dict, channel: str, llm: TextProvider) -> CoverC
         "不要加入无依据的数字、版本、效果或保证，不制造爆款和收益承诺。不写副标题、链接或来源说明。",
         "evidence：从正文逐字引用一段支持短标题的原文，不得改写。",
         "scene：用中文描述与核心内容直接相关的主体、动作和场景，不要把标题或标语写进场景。",
+        "scene必须是完全无字的插画场景：仅使用实体物件或抽象几何形状，不用计分牌、计分屏、行情看板、数据图表或需要显示文字数字的载体。财经用芯片、能源实体或无标签色块；体育用球拍、球台、球等道具，不用比赛计分屏或品牌标识。",
         "主视觉必须体现正文中的核心机制、主体关系或具体产出，不能用一个人在桌前思考、写字代替主题。",
         "除非文章主题本身就是桌面或硬件，不使用办公桌、电脑屏幕、纸上文字作为主视觉。",
         "可以使用易懂的视觉隐喻，但不要虚构产品界面、平台标识或功能标签。",
@@ -123,6 +133,8 @@ def prepare_cover_copy(payload: dict, channel: str, llm: TextProvider) -> CoverC
                 raise ValueError("封面短标题必须为单行中文文案，最多24个字符")
             if len(scene) > 500 or RENDER_SPEC.search(headline + "\n" + scene):
                 raise ValueError("封面文案或场景混入了链接、来源说明或绘图参数")
+            if _requires_cover_text(scene):
+                raise ValueError("无字封面不能使用计分屏、行情看板或要求显示文字数字；改为实体物件和无标签几何造型")
             if evidence not in article:
                 raise ValueError("封面文案依据必须逐字来自最终正文")
             for number in re.findall(r"\d+(?:\.\d+)*", headline):
