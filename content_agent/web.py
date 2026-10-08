@@ -2052,7 +2052,7 @@ INDEX_HTML = r"""<!doctype html>
     .account-links a { color: var(--green-dark); font-size: 13px; font-weight: 800; text-decoration: none; }
     label { display: block; color: var(--muted); font-size: 12px; font-weight: 700; margin: 14px 0 6px; }
     [hidden] { display: none !important; }
-    input, textarea, select {
+    input:not([type="checkbox"]), textarea, select {
       width: 100%;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -2062,7 +2062,16 @@ INDEX_HTML = r"""<!doctype html>
       font-size: 14px;
       outline: none;
     }
-    input, select { height: 40px; }
+    input:not([type="checkbox"]), select { height: 40px; }
+    .checkbox-row { display: flex; align-items: center; gap: 8px; margin: 10px 0 4px; cursor: pointer; }
+    .checkbox-row input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      flex: 0 0 16px;
+      margin: 0;
+      padding: 0;
+      accent-color: var(--green);
+    }
     textarea {
       min-height: 112px;
       padding: 10px 12px;
@@ -2304,7 +2313,7 @@ INDEX_HTML = r"""<!doctype html>
         <label for="keyword">创作提示词</label>
         <textarea id="keyword" name="keyword" autocomplete="off">我想写一篇公众号文章，主题是普通人如何用 AI 做副业，目标读者是想赚钱但没方向的打工族，内容要真实、不鸡血，最好有避坑和行动步骤。</textarea>
         <p class="empty" style="margin-top:6px;">把你想写什么、给谁看、希望什么风格写清楚。</p>
-        <label class="checkbox-row" style="display:flex;align-items:center;gap:8px;margin:10px 0 4px;">
+        <label class="checkbox-row">
           <input id="usePromptAsTitle" name="use_prompt_as_title" type="checkbox" />
           <span>简报选题：成稿标题用提示词原文</span>
         </label>
