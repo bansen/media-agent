@@ -39,6 +39,11 @@ def _source_hash(result: WorkflowResult) -> str:
     return text_hash(json.dumps(source_context(result), ensure_ascii=False, sort_keys=True))
 
 
+def _source_text(result: WorkflowResult) -> str:
+    source = source_context(result)
+    return "\n".join((source["title"], source["body"], source["url"]))
+
+
 def review_is_current(result: WorkflowResult, article: str, report: object) -> bool:
     return (
         isinstance(report, dict)
@@ -52,7 +57,7 @@ def review_is_current(result: WorkflowResult, article: str, report: object) -> b
             and isinstance(check.get("claim"), str) and bool(check["claim"].strip())
             and isinstance(check.get("source_quote"), str) and bool(check["source_quote"].strip())
             and _contains(article, check["claim"])
-            and _contains(source_context(result)["title"] + "\n" + source_context(result)["body"], check["source_quote"])
+            and _contains(_source_text(result), check["source_quote"])
             for check in report["checks"]
         )
         and report.get("source_sha256") == _source_hash(result)
@@ -67,7 +72,7 @@ def _contains(text: str, quote: str) -> bool:
 def review_article(result: WorkflowResult, article: str, llm: TextProvider) -> dict:
     """Never treat unavailable, malformed or ungrounded review output as approval."""
     source = source_context(result)
-    source_text = source["title"] + "\n" + source["body"]
+    source_text = _source_text(result)
     report = {
         "version": REVIEW_VERSION,
         "status": "failed",

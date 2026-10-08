@@ -133,6 +133,15 @@ class FactReviewTests(unittest.TestCase):
         self.assertIn("不设最低字数", prompt)
         self.assertIn("原文优先", prompt)
 
+    def test_source_url_can_support_the_articles_source_link(self):
+        from content_agent.fact_review import review_article, review_is_current
+        result = news_result("比分为3比2。")
+        url = result.topics[0].url
+        article = f"比分为3比2。\n来源：{url}"
+        report = review_article(result, article, ScriptedLLM(passed(url, url)))
+        self.assertEqual(report["status"], "passed")
+        self.assertTrue(review_is_current(result, article, report))
+
 
 if __name__ == "__main__":
     unittest.main()

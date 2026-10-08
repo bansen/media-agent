@@ -22,7 +22,7 @@ Approved by the user in this conversation: preserve URL-only input, remove minim
 
 ## Verification record
 
-- Local suite: 266 tests passed; whitespace check passed.
+- Local suite: 267 tests passed; whitespace check passed.
 - Independent code review identified omitted HTML head-end handling and incomplete cached-evidence validation; both fixed with regressions.
 - Live historical-draft model review awaits explicit transmission approval after automatic approval review rejected the initial request. No historical draft was sent by that rejected command.
-- Deployment pending final commit and CI/CD.
+- Deployment is tracked in the repository CI/CD runs for the implementation commits.
