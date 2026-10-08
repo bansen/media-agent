@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime
 from html import escape
 from pathlib import Path
 
@@ -216,7 +215,6 @@ def _cover(title: str, sections: list[dict]) -> str:
       <span style="width:6px;height:6px;background:#059669;border-radius:50%;"><span leaf=""><br></span></span>
       <span style="font-size:11px;font-weight:700;letter-spacing:3px;color:#059669;"><span leaf="">TUTORIAL</span></span>
       <section style="flex:1;height:1px;overflow:hidden;background:linear-gradient(to right,rgba(5,150,105,0.12),transparent);"><span leaf=""><br></span></section>
-      <span style="font-size:10px;color:#D1D5DB;font-weight:600;"><span leaf="">{datetime.now().strftime('%Y.%m')}</span></span>
     </section>
     <section>
       <p style="font-size:24px;font-weight:900;color:#111827;margin:0;line-height:1.16;letter-spacing:0;">

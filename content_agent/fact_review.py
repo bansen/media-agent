@@ -100,6 +100,7 @@ def review_article(result: WorkflowResult, article: str, llm: TextProvider) -> d
         "核对正文中的链接只能引用来源URL，不得编造引用地址。标题也必须保持原文的归属和不确定性。",
         "仅返回JSON：verdict为pass或fail，checks为支持的主张，issues为不支持、矛盾或无法核实的主张。",
         "每项checks含claim（逐字摘录待审文章的一处主张）和source_quote（逐字引用支持它的原文）。",
+        "claim和source_quote必须是对应输入字符串中连续存在的原句，不要改写、补标点、合并分散句子或省略句中内容；保留引文中的换行。",
         "每项issues含claim、source_quote、reason；不存在证据时source_quote为空，并解释缺少什么依据。",
         "issues非空必须fail；pass须完整检查标题及正文中的事实主张，checks至少一项。不要为凑数编造证据。",
         "INPUT_JSON:",

@@ -1,7 +1,6 @@
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import patch
 from pathlib import Path
 
 from content_agent.exporters import build_wechat_draft_payload
@@ -11,6 +10,11 @@ from content_agent.workflow import run_keyword_workflow
 
 
 class WeChatGzhFormattingTests(unittest.TestCase):
+    def test_formatting_does_not_invent_a_date(self):
+        html = format_wechat_markdown("# 赛事简报\n\n10月8日，朱思冰3比2获胜。")
+        self.assertNotRegex(html, r"\d{4}\.\d{2}")
+        self.assertIn("10月8日", html)
+
     def test_formats_markdown_as_gzh_section_fragment(self):
         html = format_wechat_markdown(
             """# 普通人用 AI 做副业，最容易踩的 5 个坑
@@ -97,14 +101,12 @@ class WeChatGzhFormattingTests(unittest.TestCase):
         self.assertIn("别再问“AI能干嘛”了，", html)
         self.assertIn("MiniMax H3的新模型", html)
 
-    def test_cover_uses_current_date_and_topic_subtitle(self):
-        with patch("content_agent.formatters.wechat_gzh.datetime") as mocked_datetime:
-            mocked_datetime.now.return_value.strftime.return_value = "2026.09"
-            html = format_wechat_markdown(
-                "# 用 AI 做视频，别再手工剪辑\n\n## 把文字变成可发布的视频\n\n正文内容。"
-            )
+    def test_cover_uses_topic_subtitle_without_inventing_a_date(self):
+        html = format_wechat_markdown(
+            "# 用 AI 做视频，别再手工剪辑\n\n## 把文字变成可发布的视频\n\n正文内容。"
+        )
 
-        self.assertIn("2026.09", html)
+        self.assertNotRegex(html, r"\d{4}\.\d{2}")
         self.assertIn("本文拆解：把文字变成可发布的视频", html)
         self.assertNotIn("2026.07", html)
         self.assertNotIn("先追风口", html)
