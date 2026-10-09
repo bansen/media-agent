@@ -22,5 +22,5 @@ ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "set -euo pipefail
     echo 'Created ${ENV_FILE} from .env.example. Fill it before starting the service.' >&2
     exit 1
   fi
-  ENV_FILE='${ENV_FILE}' docker compose --env-file '${ENV_FILE}' -f docker-compose.prod.yml up -d app
+  APP_DIR='${DEPLOY_PATH}' ENV_FILE='${ENV_FILE}' sh scripts/deploy.sh
 "

@@ -32,4 +32,8 @@ compose() {
 }
 
 compose pull
-compose up -d
+compose up -d --wait --wait-timeout 120
+
+# Image-only cleanup: Docker preserves images referenced by any container.
+echo "Deployment started successfully. Removing all unused server images."
+docker image prune --all --force

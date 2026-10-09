@@ -46,7 +46,7 @@ REPO_NAME=media-agent ./scripts/publish_private_repo.sh
 ```bash
 mkdir -p /opt/media-agent
 cd /opt/media-agent
-docker compose --env-file .env.production -f docker-compose.prod.yml up -d app
+sh scripts/deploy.sh
 ```
 
 首次部署时，如果服务器上没有 `.env.production`，部署脚本会先从 `.env.example` 创建一个默认文件：
@@ -91,6 +91,10 @@ Cloudflare 里手动配置：
 ## 5. 手动部署脚本
 
 `scripts/deploy.sh` 会在服务器 `/opt/media-agent` 下启动最新镜像。GitHub Actions 会自动同步 `docker-compose.prod.yml`、`scripts/deploy.sh`、`.env.example` 和 Nginx 配置，一般不需要本地手动运行。
+
+每次部署拉取镜像后，脚本最多等待 120 秒，确认 Compose 服务处于运行状态（有健康检查的服务须健康），再执行 `docker image prune --all --force`，清理这台服务器上所有未被任何容器引用的镜像，包括其他项目的闲置镜像和带标签旧镜像。正在运行或已停止容器引用的镜像均保留；不清理容器、数据卷、数据库、文章或图片。旧版本不再保留本地镜像副本，需要回滚时从 GHCR 重新拉取对应版本。
+
+拉取或启动失败时不执行清理；清理失败会使部署报错，清理释放的空间由 Docker 输出到部署日志。本地手动部署入口也调用同一脚本。
 
 如需从本地手动触发服务器部署，可使用：
 

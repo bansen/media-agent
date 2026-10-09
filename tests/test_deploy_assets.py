@@ -1,4 +1,7 @@
 import unittest
+import os
+import subprocess
+import tempfile
 from pathlib import Path
 
 
@@ -6,6 +9,46 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 class DeployAssetTests(unittest.TestCase):
+    def run_deploy(self, failure=""):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".env.production").write_text("WEBSEARCH_MCP_ENABLED=false\n")
+            docker = root / "docker"
+            docker.write_text(
+                '#!/bin/sh\nprintf "%s\\n" "$*" >> "$DOCKER_LOG"\n'
+                'if [ -n "$FAIL_COMMAND" ]; then\n'
+                '  case "$*" in *"$FAIL_COMMAND"*) exit 17;; esac\nfi\n'
+            )
+            docker.chmod(0o755)
+            log = root / "docker.log"
+            result = subprocess.run(
+                ["sh", str(PROJECT_ROOT / "scripts/deploy.sh")],
+                env={**os.environ, "PATH": str(root) + os.pathsep + os.environ["PATH"],
+                     "APP_DIR": str(root), "ENV_FILE": ".env.production",
+                     "DOCKER_LOG": str(log), "FAIL_COMMAND": failure},
+                capture_output=True, text=True,
+            )
+            return result, log.read_text().splitlines()
+
+    def test_successful_deployment_prunes_unused_images_after_startup(self):
+        result, commands = self.run_deploy()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(commands[-1], "image prune --all --force")
+        self.assertIn("up -d --wait --wait-timeout 120", commands[-2])
+        self.assertFalse(any("volume" in command or "system prune" in command for command in commands))
+
+    def test_failed_pull_or_startup_keeps_old_images(self):
+        for failure in ("pull", "up -d"):
+            with self.subTest(failure=failure):
+                result, commands = self.run_deploy(failure)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(any("prune" in command for command in commands))
+
+    def test_cleanup_failure_is_reported_as_deployment_failure(self):
+        result, commands = self.run_deploy("image prune")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(commands[-1], "image prune --all --force")
+
     def test_private_repo_script_documents_safe_git_publish_flow(self):
         script = (PROJECT_ROOT / "scripts" / "publish_private_repo.sh").read_text(encoding="utf-8")
 
