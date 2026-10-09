@@ -41,8 +41,31 @@ class WeChatGzhFormattingTests(unittest.TestCase):
         self.assertNotIn("<style", html)
         self.assertIn('span leaf=""', html)
         self.assertIn("普通人用 AI 做副业", html)
-        self.assertIn("PART 01", html)
-        self.assertIn("点赞、在看、转发", html)
+        self.assertIn("先找真实需求", html)
+        self.assertNotIn("点赞、在看、转发", html)
+
+    def test_news_formatting_does_not_add_unrelated_template_copy(self):
+        html = format_wechat_markdown(
+            "# 新闻标题\n\n## 事件进展\n\n来源仅确认这项进展。"
+        )
+
+        for unsupported in (
+            "TUTORIAL",
+            "AI 实用观察",
+            "AI SIDE",
+            "KEY POINT",
+            "这里持续分享 AI 工具",
+            "点赞、在看、转发",
+        ):
+            self.assertNotIn(unsupported, html)
+
+    def test_source_url_is_preserved_verbatim(self):
+        source_url = "https://example.com/news?id=42"
+
+        html = format_wechat_markdown(f"# 新闻标题\n\n原文链接：{source_url}")
+
+        self.assertIn(source_url, html)
+        self.assertNotIn("https：//", html)
 
     def test_formatted_html_does_not_include_author_placeholders(self):
         html = format_wechat_markdown("# 标题\n\n## 第一节\n\n正文内容。")
@@ -91,9 +114,10 @@ class WeChatGzhFormattingTests(unittest.TestCase):
 """
         )
 
-        self.assertIn("📦 5 Parts", html)
-        self.assertEqual(html.count("width:110px"), 5)
-        self.assertIn("PART 05", html)
+        self.assertNotIn("Parts", html)
+        self.assertNotIn("PART 05", html)
+        for heading in ("第一坑", "第二坑", "第三坑", "第四坑", "第五坑"):
+            self.assertEqual(html.count(heading), 1)
 
     def test_cover_title_keeps_full_long_title(self):
         html = format_wechat_markdown("# 别再问“AI能干嘛”了，MiniMax H3的新模型\n\n## 第一节\n\n正文内容。")
@@ -107,7 +131,8 @@ class WeChatGzhFormattingTests(unittest.TestCase):
         )
 
         self.assertNotRegex(html, r"\d{4}\.\d{2}")
-        self.assertIn("本文拆解：把文字变成可发布的视频", html)
+        self.assertIn("把文字变成可发布的视频", html)
+        self.assertNotIn("本文拆解：", html)
         self.assertNotIn("2026.07", html)
         self.assertNotIn("先追风口", html)
         self.assertNotIn("真实需求 · 小步验证 · 可交付流程", html)
@@ -115,7 +140,8 @@ class WeChatGzhFormattingTests(unittest.TestCase):
     def test_cover_label_matches_model_topic(self):
         html = format_wechat_markdown("# MiniMax H3有新变化，普通人先看懂这 3 点\n\n## 第一节\n\n正文内容。")
 
-        self.assertIn("AI 模型观察", html)
+        self.assertNotIn("AI 模型观察", html)
+        self.assertIn("MiniMax H3有新", html)
         self.assertNotIn("AI 副业学习分享", html)
 
     def test_accepts_multiple_named_themes(self):

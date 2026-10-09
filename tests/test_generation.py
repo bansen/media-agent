@@ -86,6 +86,17 @@ class GenerationTests(unittest.TestCase):
         self.assertIn("不要承诺日更或固定更新频率", llm.prompts[0])
         self.assertIn("不设最低字数，篇幅由原文信息量决定", llm.prompts[0])
 
+    def test_wechat_prompt_forbids_unverified_engagement_and_tags(self):
+        result = run_keyword_workflow("AI副业", get_mock_candidates("AI副业", channel="wechat"))
+        llm = FakeLLMProvider()
+
+        generate_llm_drafts(result, llm)
+
+        prompt = llm.draft_prompts[0]
+        self.assertIn("不得添加原文没有的互动提问", prompt)
+        self.assertIn("不得添加话题标签", prompt)
+        self.assertIn("不得添加账号定位或推广语", prompt)
+
     def test_wechat_content_uses_persisted_llm_plan_and_wechat_skill(self):
         result = run_keyword_workflow(
             "https://github.com/msitarzewski/agency-agents/blob/main/README.md 分享",

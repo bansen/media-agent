@@ -66,15 +66,11 @@ def format_wechat_markdown(markdown: str, theme: str = "moyu-green") -> str:
     parts.append(_cover(title, sections))
     if intro_blocks:
         parts.extend(_render_block(block, index=0) for block in intro_blocks)
-    if len(sections) >= 2:
-        parts.append(_toc(sections))
     for index, section in enumerate(sections, start=1):
         is_last = index == len(sections) and _is_conclusion(section["title"])
         parts.append(_chapter_title(section["title"], index, is_last=is_last))
         for block in section["blocks"]:
             parts.append(_render_block(block, index=index))
-    parts.append(_signature())
-    parts.append(_footer_cta())
     parts.append("</section>")
     return _apply_theme("\n".join(part for part in parts if part), theme)
 
@@ -199,13 +195,11 @@ def _container_start() -> str:
 
 def _cover(title: str, sections: list[dict]) -> str:
     first, second = _split_title(title)
-    cover_label = _cover_label(title)
-    subtitle = _cover_subtitle(sections)
-    subtitle_html = (
-        f'''<p style="font-size:13px;color:#9CA3AF;margin:0;line-height:1.7;letter-spacing:0.5px;">
-        <span leaf="">{_text(subtitle)}</span>
+    second_html = (
+        f'''<p style="font-size:24px;font-weight:900;color:#059669;margin:0 0 16px;line-height:1.16;letter-spacing:0;">
+        <span leaf="">{_text(second)}</span>
       </p>'''
-        if subtitle
+        if second
         else ""
     )
     return f"""
@@ -213,29 +207,16 @@ def _cover(title: str, sections: list[dict]) -> str:
   <section style="padding:32px 28px 28px;">
     <section style="display:flex;align-items:center;gap:8px;margin-bottom:28px;">
       <span style="width:6px;height:6px;background:#059669;border-radius:50%;"><span leaf=""><br></span></span>
-      <span style="font-size:11px;font-weight:700;letter-spacing:3px;color:#059669;"><span leaf="">TUTORIAL</span></span>
       <section style="flex:1;height:1px;overflow:hidden;background:linear-gradient(to right,rgba(5,150,105,0.12),transparent);"><span leaf=""><br></span></section>
     </section>
     <section>
       <p style="font-size:24px;font-weight:900;color:#111827;margin:0;line-height:1.16;letter-spacing:0;">
         <span leaf="">{_text(first)}</span>
       </p>
-      <p style="font-size:24px;font-weight:900;color:#059669;margin:0 0 16px;line-height:1.16;letter-spacing:0;">
-        <span leaf="">{_text(second)}</span>
-      </p>
+      {second_html}
       <section style="width:48px;height:3px;background:linear-gradient(to right,#059669,#34D399);border-radius:2px;margin-bottom:12px;">
         <span leaf=""><br></span>
       </section>
-      {subtitle_html}
-    </section>
-  </section>
-  <section style="background:linear-gradient(135deg,#059669,#10B981);padding:12px 28px;display:flex;align-items:center;justify-content:space-between;">
-    <p style="font-size:12px;color:rgba(255,255,255,0.9);margin:0;font-weight:600;letter-spacing:0.5px;">
-      <span leaf="">{_text(cover_label)}</span>
-    </p>
-    <section style="display:flex;gap:4px;">
-      <span style="background:rgba(255,255,255,0.2);padding:1px 6px;border-radius:3px;font-size:8px;color:#fff;font-weight:600;"><span leaf="">AI</span></span>
-      <span style="background:rgba(255,255,255,0.2);padding:1px 6px;border-radius:3px;font-size:8px;color:#fff;font-weight:600;"><span leaf="">SIDE</span></span>
     </section>
   </section>
 </section>""".strip()
@@ -286,30 +267,14 @@ def _toc(sections: list[dict]) -> str:
 
 
 def _chapter_title(title: str, index: int, is_last: bool = False) -> str:
-    number = "///" if is_last else f"{index:02d}"
-    label = "LAST" if is_last else "PART"
     margin_top = "16px" if index == 1 else "48px"
-    english = _english_label(title)
     return f"""
 <section style="margin-top:{margin_top};margin-bottom:32px;padding:0 20px;">
-  <section style="display:flex;align-items:center;gap:16px;margin-bottom:24px;">
-    <section style="text-align:center;flex-shrink:0;">
-      <p style="margin:0;font-size:28px;font-weight:900;color:#059669;line-height:1;letter-spacing:0;">
-        <span leaf="">{number}</span>
-      </p>
-      <p style="margin:0;font-size:8px;font-weight:700;color:#D1D5DB;letter-spacing:2px;">
-        <span leaf="">{label}</span>
-      </p>
-    </section>
-    <span style="width:1px;height:36px;background:#E5E7EB;flex-shrink:0;"><span leaf=""><br></span></span>
-    <section>
-      <p style="margin:0 0 1px;font-size:17px;font-weight:900;color:#111827;letter-spacing:0.3px;">
-        <span leaf="">{_text(title)}</span>
-      </p>
-      <p style="margin:0;font-size:11px;font-weight:600;color:#9CA3AF;letter-spacing:1.5px;">
-        <span leaf="">{english}</span>
-      </p>
-    </section>
+  <section style="display:flex;align-items:center;gap:12px;margin-bottom:24px;">
+    <span style="width:4px;height:24px;background:#059669;border-radius:2px;flex-shrink:0;"><span leaf=""><br></span></span>
+    <p style="margin:0;font-size:17px;font-weight:900;color:#111827;letter-spacing:0.3px;">
+      <span leaf="">{_text(title)}</span>
+    </p>
   </section>
 </section>""".strip()
 
@@ -444,22 +409,28 @@ def _text(text: str) -> str:
 
 
 def _normalize_punctuation(text: str) -> str:
-    return (
-        text.replace(",", "，")
-        .replace(";", "；")
-        .replace("!", "！")
-        .replace("?", "？")
-        .replace(":", "：")
-        .replace('"', "”")
-        .replace("'", "’")
+    def normalize_plain(value: str) -> str:
+        return (
+            value.replace(",", "，")
+            .replace(";", "；")
+            .replace("!", "！")
+            .replace("?", "？")
+            .replace(":", "：")
+            .replace('"', "”")
+            .replace("'", "’")
+        )
+
+    return "".join(
+        part if re.fullmatch(r"https?://[^\s]+", part) else normalize_plain(part)
+        for part in re.split(r"(https?://[^\s]+)", text)
     )
 
 
 def _split_title(title: str) -> tuple[str, str]:
     clean = title.strip()
     if len(clean) <= 12:
-        return clean, "方法拆解"
-    return clean[:12], clean[12:] or "方法拆解"
+        return clean, ""
+    return clean[:12], clean[12:]
 
 
 def _cover_label(title: str) -> str:
