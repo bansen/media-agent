@@ -85,7 +85,7 @@ class SeedreamHttpRunner:
             "response_format": "url",
             "sequential_image_generation": "disabled",
             "stream": False,
-            "watermark": True,
+            "watermark": False,
         }
         req = request.Request(
             "https://ark.cn-beijing.volces.com/api/v3/images/generations",

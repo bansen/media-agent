@@ -67,6 +67,7 @@ class SeedreamTests(unittest.TestCase):
                 self.assertEqual(payload["size"], api_size)
                 self.assertEqual(payload["prompt"], "a book")
                 self.assertEqual(payload["sequential_image_generation"], "disabled")
+                self.assertIs(payload["watermark"], False)
                 self.assertNotIn("prompt_upsampling", payload)
                 with Image.open(cover.path) as saved:
                     self.assertEqual(saved.size, expected_size)
