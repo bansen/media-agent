@@ -82,6 +82,21 @@ def _agency_candidate() -> CandidateContent:
 
 
 class WebTests(unittest.TestCase):
+    def test_format_step_preserves_verified_source_url_without_rewriting_article(self):
+        source_url = "https://example.com/news?id=42"
+        with tempfile.TemporaryDirectory() as tmpdir:
+            options = WebRunOptions(
+                keyword=source_url, channel="wechat", output_dir=Path(tmpdir)
+            )
+            current = {
+                "topics": [{"url": source_url}],
+                "llm_drafts": {"wechat_article": "# 新闻标题\n\n来源支持的正文。"},
+            }
+            formatted = run_agent_step(options, "format", current)
+            html = Path(formatted["gzh_formatting"]["clean_html"]).read_text()
+            self.assertIn("来源支持的正文", html)
+            self.assertIn(source_url, html)
+
     def test_localizes_wechat_rewrite_progress(self):
         events = []
 

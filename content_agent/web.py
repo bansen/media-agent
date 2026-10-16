@@ -468,6 +468,16 @@ def _status_for_result(result: dict) -> JobStatus:
     return "completed"
 
 
+def _markdown_with_verified_source_url(markdown: str, payload: dict, options: WebRunOptions) -> str:
+    urls = resolve_source_urls(options.source_urls, options.keyword)
+    topics = payload.get("topics") or []
+    if len(urls) != 1 or not topics or topics[0].get("url") != urls[0]:
+        return markdown
+    if urls[0] in markdown:
+        return markdown
+    return markdown.rstrip() + f"\n\n原文链接：{urls[0]}"
+
+
 def run_agent_workflow(
     options: WebRunOptions,
     progress: Callable[[str], None] | None = None,
@@ -528,7 +538,9 @@ def run_agent_workflow(
     elif options.channel == "wechat" and (options.format_gzh or options.submit_wechat_draft):
         emit("正在进行公众号排版")
         markdown = payload.get("llm_drafts", {}).get("wechat_article") or _wechat_outline_to_markdown(result.wechat_outline)
-        formatted_html = format_wechat_markdown(markdown, theme=options.format_theme)
+        formatted_html = format_wechat_markdown(
+            _markdown_with_verified_source_url(markdown, payload, options), theme=options.format_theme
+        )
         paths = write_gzh_outputs(formatted_html, artifact_output_dir, _safe_basename(options.keyword), theme=options.format_theme)
         payload["gzh_formatting"] = {
             "theme": theme_label(options.format_theme),
@@ -672,7 +684,9 @@ def run_agent_step(
     if step == "format":
         emit("正在进行公众号排版")
         markdown = str((payload.get("llm_drafts") or {}).get("wechat_article") or "")
-        formatted_html = format_wechat_markdown(markdown, theme=options.format_theme)
+        formatted_html = format_wechat_markdown(
+            _markdown_with_verified_source_url(markdown, payload, options), theme=options.format_theme
+        )
         paths = write_gzh_outputs(formatted_html, artifact_output_dir, _safe_basename(options.keyword), theme=options.format_theme)
         payload["gzh_formatting"] = {
             "theme": theme_label(options.format_theme),
