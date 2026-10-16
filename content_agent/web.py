@@ -5,6 +5,7 @@ from copy import deepcopy
 import json
 import mimetypes
 import threading
+from datetime import datetime, timezone
 from dataclasses import asdict, dataclass, field, is_dataclass, replace
 from http import HTTPStatus
 from http.cookies import SimpleCookie
@@ -47,8 +48,8 @@ from .database import (
 )
 from .formatters.wechat_gzh import format_wechat_markdown, theme_label, write_gzh_outputs
 from .generation import generate_llm_drafts
-from .fact_review import FactReviewError
-from .publication_review import ensure_article_review, retain_rejected_draft
+from .fact_review import FactReviewError, review_is_current, text_hash
+from .publication_review import ensure_article_review, html_review_text, retain_rejected_draft
 from .keyword_seed import build_keyword_seed_candidates
 from .llm_content_planner import apply_llm_content_plan, generate_llm_content_plan
 from .models import TopicBrief, TopicScore, WorkflowResult
@@ -478,6 +479,36 @@ def _markdown_with_verified_source_url(markdown: str, payload: dict, options: We
     return markdown.rstrip() + f"\n\n原文链接：{urls[0]}"
 
 
+def _verified_render_review(result: WorkflowResult, payload: dict, options: WebRunOptions, html: str) -> dict | None:
+    if options.wechat_content_html:
+        return None
+    urls = resolve_source_urls(options.source_urls, options.keyword)
+    if len(urls) != 1 or result.topics[0].url != urls[0]:
+        return None
+    drafts = payload.get("llm_drafts") or {}
+    markdown = str(drafts.get("wechat_article") or "")
+    report = drafts.get("fact_review")
+    if not markdown.startswith(f"# {result.topics[0].optimized_title}\n"):
+        return None
+    if any(url != urls[0] for url in resolve_source_urls((), markdown)):
+        return None
+    if not review_is_current(result, markdown, report):
+        return None
+    expected = format_wechat_markdown(
+        _markdown_with_verified_source_url(markdown, payload, options), theme=options.format_theme
+    )
+    if html != expected or urls[0] not in html_review_text(result, html):
+        return None
+    return {
+        **report,
+        "method": "verified_render",
+        "rendered_from_article_sha256": report["article_sha256"],
+        "article_sha256": text_hash(html_review_text(result, html)),
+        "html_sha256": text_hash(html),
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 def run_agent_workflow(
     options: WebRunOptions,
     progress: Callable[[str], None] | None = None,
@@ -770,7 +801,11 @@ def submit_previewed_wechat_draft(
     content_html = Path(html_path).read_text(encoding="utf-8")
     config = config or AgentConfig.from_env_file()
     workflow_result = _workflow_result_from_payload(result_payload)
-    ensure_article_review(workflow_result, result_payload, config.build_llm_provider(), content_html)
+    render_review = _verified_render_review(workflow_result, result_payload, job.options, content_html)
+    if render_review is not None:
+        result_payload["publication_fact_review"] = render_review
+    else:
+        ensure_article_review(workflow_result, result_payload, config.build_llm_provider(), content_html)
     published = publish_wechat_draft(
         result=workflow_result,
         content_html=content_html,

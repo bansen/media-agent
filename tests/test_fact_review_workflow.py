@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import patch, Mock
 
 from content_agent.fact_review import FactReviewError, review_article
+from content_agent.formatters.wechat_gzh import format_wechat_markdown
 from content_agent.publication_review import ensure_article_review
 from content_agent.web import (JobStore, WebRunOptions, run_agent_step, _to_jsonable,
                                submit_stored_previewed_wechat_draft)
@@ -21,6 +22,31 @@ def payload():
 
 
 class ReviewWorkflowTests(unittest.TestCase):
+    def test_exact_render_of_reviewed_url_article_does_not_need_a_second_model_verdict(self):
+        result = news_result(SOURCE)
+        source_url = result.topics[0].url
+        value = payload()
+        article = value['llm_drafts']['wechat_article']
+        value['llm_drafts']['fact_review'] = review_article(result, article, ScriptedLLM(passed(SOURCE, SOURCE)))
+        with tempfile.TemporaryDirectory() as directory:
+            html, cover = Path(directory) / 'article.html', Path(directory) / 'cover.jpg'
+            html.write_text(format_wechat_markdown(article + '\n\n原文链接：' + source_url))
+            cover.write_bytes(b'cover')
+            value.update(gzh_formatting={'clean_html': str(html)}, cover_image={'path': str(cover)})
+            store = JobStore(database_url=f'sqlite:///{directory}/jobs.db', auto_start=False)
+            job = store.create(WebRunOptions(keyword=source_url))
+            store._update(job.id, status='preview_ready', result=value)
+            config = Mock()
+            config.build_llm_provider.return_value.generate.side_effect = AssertionError('second review should not run')
+            published = Mock(thumb_media_id='thumb', response={'media_id': 'draft'})
+            with patch('content_agent.web.publish_wechat_draft', return_value=published):
+                submitted = submit_stored_previewed_wechat_draft(store, job.id, config)
+            self.assertEqual(submitted.status, 'published_draft')
+            self.assertEqual(submitted.result['publication_fact_review']['status'], 'passed')
+            self.assertEqual(submitted.result['publication_fact_review']['method'], 'verified_render')
+            config.build_llm_provider.return_value.generate.assert_not_called()
+            store._engine.dispose()
+
     def test_optional_head_and_body_tags_do_not_hide_submitted_body(self):
         from content_agent.publication_review import html_review_text
         for start in ('<body>', ''):
