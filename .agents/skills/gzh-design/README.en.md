@@ -200,9 +200,9 @@ If this project helps you, a Star means a lot 🙏
 
 <a href="https://www.star-history.com/?repos=isjiamu%2Fgzh-design-skill&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=isjiamu/gzh-design-skill&type=date&theme=dark&legend=top-left&sealed_token=OSZCPLO_3NeTUKAtXcnNT6T3HuZwlFsH1HDGh6BcU0G2bdOm-5snTE01rzgYkwgNkF0pvraNI226pwK4jt9zYc4YuJ196yA1fcRRZKmfVQDMWqtE87dHqXn1E4v2q1mCWNFHzXAGJrCMEHx_0wwNmIVOg5nOaNCtRUYS2C_E1IlITdmy_yv7vpyVxqti" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=isjiamu/gzh-design-skill&type=date&legend=top-left&sealed_token=OSZCPLO_3NeTUKAtXcnNT6T3HuZwlFsH1HDGh6BcU0G2bdOm-5snTE01rzgYkwgNkF0pvraNI226pwK4jt9zYc4YuJ196yA1fcRRZKmfVQDMWqtE87dHqXn1E4v2q1mCWNFHzXAGJrCMEHx_0wwNmIVOg5nOaNCtRUYS2C_E1IlITdmy_yv7vpyVxqti" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=isjiamu/gzh-design-skill&type=date&legend=top-left&sealed_token=OSZCPLO_3NeTUKAtXcnNT6T3HuZwlFsH1HDGh6BcU0G2bdOm-5snTE01rzgYkwgNkF0pvraNI226pwK4jt9zYc4YuJ196yA1fcRRZKmfVQDMWqtE87dHqXn1E4v2q1mCWNFHzXAGJrCMEHx_0wwNmIVOg5nOaNCtRUYS2C_E1IlITdmy_yv7vpyVxqti" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=isjiamu/gzh-design-skill&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=isjiamu/gzh-design-skill&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=isjiamu/gzh-design-skill&type=date&legend=top-left" />
  </picture>
 </a>
 

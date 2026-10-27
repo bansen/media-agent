@@ -287,3 +287,10 @@ Current MVP adapter:
 - Do not publish health diagnosis or treatment claims.
 - Keep human confirmation before final publishing.
 - Keep API keys in `.env`; never commit real secrets.
+
+## License
+
+The original code in this repository is licensed under the [MIT License](LICENSE).
+The bundled `gzh-design` skill in `.agents/skills/gzh-design` is a third-party
+component licensed separately under [AGPL-3.0](.agents/skills/gzh-design/LICENSE).
+Its own copyright and license terms remain in effect.
