@@ -1,18 +1,20 @@
-# Content Agent
+# 内容创作助手（Content Agent）
 
-MVP for a keyword-driven content agent:
+根据关键词或原始来源链接，完成热点候选整理、渠道内容生成、封面制作、公众号排版与草稿提交。基本流程：
 
 ```text
-keyword -> viral topic scoring -> channel drafts -> cover prompt -> WeChat draft payload -> Xiaohongshu package
+关键词或原链接 → 候选内容与热度评分 → 渠道文稿 → 封面 → 公众号草稿 / 小红书素材包
 ```
 
-## Channels
+## 支持渠道
 
-- WeChat official account: full automation to draft payload first, real draft submission after credentials and IP allowlist are configured.
-- Baijiahao: paused. No API integration and no content generation in the current MVP.
-- Xiaohongshu: semi-automatic publishing package. The first version does not auto-post.
+- **微信公众号**：生成文章、排版和封面，并可提交到已绑定公众号的草稿箱。
+- **百家号**：当前暂停；本版既不生成百家号内容，也没有发布接口。
+- **小红书**：生成供人工发布的图文素材包，暂不自动发布。
 
-## Setup
+## 快速开始
+
+复制配置模板并填写所需的服务凭据，然后运行测试或命令行工具：
 
 ```bash
 cp .env.example .env
@@ -20,31 +22,31 @@ python3 -m unittest discover -s tests -v
 python3 -m content_agent.cli --keyword "AI副业"
 ```
 
-Use Baidu Qianfan search to collect the top keyword results:
+用百度千帆搜索收集关键词结果：
 
 ```bash
 python3 -m content_agent.cli --keyword "AI副业" --channel wechat
 ```
 
-Start the local web workbench:
+启动本地网页工作台：
 
 ```bash
 python3 -m content_agent.web --host 127.0.0.1 --port 8000
 ```
 
-Use the configured LLM to generate real channel drafts:
+使用已配置的大模型生成文稿：
 
 ```bash
 python3 -m content_agent.cli --keyword "AI副业" --channel wechat --use-llm
 ```
 
-Format the WeChat draft with the installed `gzh-design` skill assets:
+使用内置 `gzh-design` 技能排版公众号文章：
 
 ```bash
 python3 -m content_agent.cli --keyword "AI副业" --channel wechat --format-gzh
 ```
 
-Submit the formatted article to the WeChat draft box:
+生成封面并将排版后的文章提交到公众号草稿箱：
 
 ```bash
 python3 -m content_agent.cli \
@@ -55,7 +57,7 @@ python3 -m content_agent.cli \
   --submit-wechat-draft
 ```
 
-Override the generated cover with a local image only when needed:
+确有需要时，可用本地图片替代生成封面：
 
 ```bash
 python3 -m content_agent.cli \
@@ -66,7 +68,7 @@ python3 -m content_agent.cli \
   --wechat-cover-image /absolute/path/to/cover.jpg
 ```
 
-If WeChat rejects the submission after content and cover are already generated, fix the WeChat IP allowlist first, then reuse the existing files without spending another LLM or Replicate call:
+如果文稿和封面已经生成，但公众号因 IP 白名单拒绝提交，先修复白名单，再复用现有文件，避免再次调用付费生成服务：
 
 ```bash
 python3 -m content_agent.cli \
@@ -77,49 +79,39 @@ python3 -m content_agent.cli \
   --wechat-cover-image "output/AI副业_cover.jpg"
 ```
 
-This command performs real WeChat API calls:
+提交命令会调用真实的微信接口。使用 `--generate-cover` 时，程序先生成封面，再获取访问令牌（如未配置 `WECHAT_ACCESS_TOKEN`）、上传永久封面素材、取得 `media_id`，最后提交草稿。
 
-```text
-generate cover with Replicate if --generate-cover is used
-fetch access_token if WECHAT_ACCESS_TOKEN is empty
-upload cover image as permanent thumb material
-receive new thumb media_id
-submit formatted article to draft box
-```
+排版输出包括：
 
-This writes:
+- `output/<keyword>_排版_摸鱼绿(moyu-green).html`：可用于公众号的正文片段。
+- `output/<keyword>_排版_摸鱼绿(moyu-green)_预览.html`：带复制按钮的浏览器预览页。
 
-- `output/<keyword>_排版_摸鱼绿(moyu-green).html` - clean WeChat body fragment.
-- `output/<keyword>_排版_摸鱼绿(moyu-green)_预览.html` - browser preview with a copy button.
+## 选题与来源
 
-## Topic Sources
+手动输入普通关键词时，使用 `baidu_search`（百度千帆网页搜索）。程序过滤明显广告和推广结果，转换为 `CandidateContent` 后，继续执行评分、写作、排版、封面和草稿流程。
 
-Manual keywords still use `baidu_search` (Baidu Qianfan web search): it filters obvious ads/promoted results, maps hits into `CandidateContent`, then reuses scoring, drafting, formatting, cover, and WeChat draft submission.
+简报选题或提供原始来源 URL 时，网页工作台、API 和命令行会直接请求 `http(s)` 页面并提取正文，跳过百度搜索。此路径不使用 Tavily。
 
-Briefing topics and any run that supplies source URLs skip Baidu entirely. The workbench / API / CLI fetch each `http(s)` page directly (plain HTTP + HTML/text extraction) and build candidates from that content. Do **not** use Tavily for this path.
-
-Configure Baidu for ordinary keyword runs:
+普通关键词模式需要配置：
 
 ```env
 BAIDU_SEARCH_API_KEY=your_baidu_qianfan_key
 ```
 
-Pass source URLs via:
+来源链接可通过以下方式传入：
 
-- Workbench textarea「原链接（每行一个）」, or paste links inside the creative prompt
-- API / options JSON field `source_urls` (array or newline-separated string)
-- CLI `--source-url` (repeatable). Briefing mode: `--use-prompt-as-title` (requires at least one URL)
+- 在工作台的「原链接（每行一个）」文本框填写，或直接粘贴进创作提示词。
+- 在 API 的 `source_urls` 字段填写数组或按行分隔的字符串。
+- 在命令行重复使用 `--source-url`。简报模式还可使用 `--use-prompt-as-title`，但必须提供至少一个 URL。
 
-If「简报选题」is checked but no URL can be resolved, the run fails with `简报选题已勾选但未提供原链接，请粘贴来源 URL` instead of falling back to Baidu.
-
-Run with:
+如果勾选「简报选题」却没有可解析的 URL，任务会明确报错，不会改用百度搜索。示例：
 
 ```bash
 python3 -m content_agent.cli \
   --keyword "AI副业" \
   --channel wechat
 
-# Briefing / source-link mode
+# 简报 / 原链接模式
 python3 -m content_agent.cli \
   --keyword "某条简报选题标题" \
   --use-prompt-as-title \
@@ -127,50 +119,37 @@ python3 -m content_agent.cli \
   --channel wechat
 ```
 
-If Baidu returns no usable result for a niche keyword (manual mode only), the workflow falls back to keyword-seed topics so the user can still generate a preview instead of hitting an empty-candidate error.
+仅在手动关键词模式下，如果百度没有返回可用结果，程序会用关键词种子生成候选，供预览流程继续运行。
 
-## Web Workbench
+## 网页工作台
 
-Run a local browser UI instead of typing CLI flags:
+启动服务后打开 `http://127.0.0.1:8000`。根页面是产品介绍页；试用入口跳转到 `/trial` 选择渠道。当前开放微信公众号；百家号和小红书显示为即将开放。公众号用户登录后，可通过微信开放平台授权公众号，也可手动填写公众号平台提供的 AppID、AppSecret 或访问令牌。
 
-```bash
-python3 -m content_agent.web --host 127.0.0.1 --port 8000
-```
+工作台将每次生成保存为内容记录：
 
-Open `http://127.0.0.1:8000`.
+- 启动后台任务，并通过 `/api/jobs/<job_id>` 查询进度。
+- 在数据库中保存任务状态、进度事件、结果 JSON、预览与封面路径，以及公众号提交尝试。
+- 在 `/api/jobs` 展示当前登录用户的历史记录；重新打开记录可恢复预览并稍后提交草稿。
+- 复用命令行的采集、模型生成、`gzh-design` 排版、封面生成和草稿提交功能。
+- 从 `output/` 提供预览 HTML 和封面，供本地检查。
 
-The root page is a public product intro page with platform-neutral trial CTAs. It can mention supported platform categories, but clickable trial text should route to `/trial`, where users choose an available platform:
+一键任务会分别保存素材选择、内容策划、文章、排版、封面及小红书布局阶段。如果后续阶段失败，可打开失败记录并从相应步骤继续，无须重新生成文章；成功重试会清除之前的错误。
 
-- WeChat official account is currently open.
-- Baijiahao and Xiaohongshu are shown as coming soon.
-- For WeChat, users first log in to the workbench, then either authorize their official account through WeChat Open Platform or manually fill AppID/AppSecret/access token from WeChat Official Account Platform.
+重新生成正文会使旧排版、封面、布局和当前草稿提交标记失效。重新排版或替换封面可提交修订版，同时保留历史提交尝试。从导入的 HTML 切换到生成正文也会使旧封面失效；仅切换排版主题则保留封面。
 
-The web workbench persists each generated run as a content record:
+公众号文章不设最低字数。已读取的原始来源优先于内容策划。独立的大模型调用会检查最终标题和正文，返回待核查表述、来源证据和失败原因；最多进行一次针对性修订。再次失败或审查服务不可用、格式无效时，流程停止并保留稿件。生成封面需要有效的当前审查结果；提交前还会检查实际 HTML 与提交标题，包括导入 HTML 和历史任务。审查结果与来源、文章指纹绑定，内容变更后须重新检查。这些检查用于减少缺乏依据的表述，不代表原始来源本身已经证实。
 
-- Starts a background job for each run and polls `/api/jobs/<job_id>` for progress.
-- Saves job status, progress events, generated result JSON, preview paths, cover paths, and WeChat publish attempts in the database.
-- Lists historical records from `/api/jobs`; selecting a record restores its preview and allows submitting it to the WeChat draft box later.
-- Filters historical records by the current logged-in user.
-- Reuses the same collectors, LLM generation, gzh-design formatting, Replicate cover generation, and WeChat draft submission functions as the CLI.
-- Serves generated preview HTML and cover files from `output/` for local inspection.
-
-One-click jobs save completed material selection, content planning, article, formatting, cover, and Xiaohongshu layout stages in the database. If a later stage fails, select the failed record and continue with the individual step buttons; the article does not need to be generated again. A successful retry clears the previous error.
-
-Regenerating content invalidates the previous formatting, cover, layout and current draft-submission marker. Reformatting or replacing a cover allows submitting the revised version while preserving historical submission attempts. Switching from an imported HTML article to the generated article also invalidates its cover; changing only the formatting theme preserves it.
-
-WeChat drafts have no minimum length. The retrieved source, rather than the editorial plan, is the factual authority. An independent call to the configured LLM checks the final title and article, returning quoted claims, source evidence and failure reasons. One targeted repair is allowed; a second rejection or unavailable/invalid review stops the workflow and preserves the rejected draft. Cover generation requires a current review. Submission separately checks the actual HTML and published title, including imported HTML and legacy records. Reports are bound to source and article hashes; changed content must be checked again. These checks reduce unsupported claims but do not establish that the original source itself is true.
-
-Local development defaults to `sqlite:///output/content_agent.db` if `DATABASE_URL` is not set. Production Docker Compose runs PostgreSQL and injects:
+未设置 `DATABASE_URL` 时，本地开发默认使用 `sqlite:///output/content_agent.db`。生产环境的 Docker Compose 使用 PostgreSQL，并向应用注入数据库连接，例如：
 
 ```env
 DATABASE_URL=postgresql+psycopg://media_agent:media_agent_change_me@db:5432/media_agent
 ```
 
-Change `POSTGRES_PASSWORD` and `DATABASE_URL` together in `.env.production`.
+生产环境须在 `.env.production` 中一起修改 `POSTGRES_PASSWORD` 和 `DATABASE_URL`。
 
-### Single-owner login without WeChat Open Platform
+### 单管理员登录（不使用微信开放平台）
 
-For a personal deployment that already stores one official account in `.env.production`, use a separate administrator password to enter the workbench. The official-account AppID and AppSecret stay on the server and are imported after login; they are never rendered into the login page.
+如果个人部署已经在 `.env.production` 保存了一个公众号，可使用独立管理员密码进入工作台。公众号 AppID 和 AppSecret 保留在服务器端，登录后才导入账号绑定信息，不会展示在登录页。
 
 ```env
 OWNER_LOGIN_PASSWORD=use-a-long-random-password
@@ -180,16 +159,16 @@ WECHAT_APP_SECRET=
 WECHAT_ACCESS_TOKEN=
 ```
 
-Generate a password with `openssl rand -hex 24`, recreate the app container, then open `/auth/owner`. This mode is intended for one owner. Keep website OAuth or another user identity system for future multi-user access.
+可用 `openssl rand -hex 24` 生成密码，重建应用容器后访问 `/auth/owner`。这一方式面向单一管理员；多人使用时应配置网站 OAuth 或其他用户身份系统。
 
-### WeChat Login vs Official Account Authorization
+### 微信网站登录与公众号授权
 
-There are two separate WeChat flows:
+这两个流程用途不同：
 
-- WeChat website login identifies the Media Agent user and creates a local session.
-- WeChat Open Platform official-account authorization gives Media Agent permission to submit drafts to the user's own official account without asking that user for AppSecret.
+- **网站登录**：识别内容工作台用户，并创建本地会话。
+- **微信开放平台公众号授权**：取得向用户公众号提交草稿的权限，无须向该用户索取 AppSecret。
 
-Website login config:
+网站登录配置：
 
 ```env
 WECHAT_LOGIN_APP_ID=
@@ -198,7 +177,7 @@ WECHAT_LOGIN_REDIRECT_URI=https://media-agent.createbeauty.top/auth/wechat/callb
 WECHAT_LOGIN_SCOPE=snsapi_login
 ```
 
-Official-account authorization config:
+公众号授权配置：
 
 ```env
 WECHAT_COMPONENT_APP_ID=
@@ -210,17 +189,15 @@ WECHAT_COMPONENT_VERIFY_TICKET=
 WECHAT_COMPONENT_ACCESS_TOKEN=
 ```
 
-`WECHAT_COMPONENT_VERIFY_TICKET` is normally pushed by WeChat to the third-party platform event endpoint. For the first production run, you can also configure a valid `WECHAT_COMPONENT_ACCESS_TOKEN` to validate the authorization flow, then replace that with automated encrypted event handling.
-
-Configure the WeChat Open Platform authorization event URL as:
+`WECHAT_COMPONENT_VERIFY_TICKET` 通常由微信推送至第三方平台事件接收接口。首次部署时，也可以先配置有效的 `WECHAT_COMPONENT_ACCESS_TOKEN` 验证授权流程，之后再改为自动处理加密事件。微信开放平台的授权事件 URL：
 
 ```text
 https://media-agent.createbeauty.top/wechat/component/notify
 ```
 
-## Model Strategy
+## 模型配置
 
-The LLM provider is OpenAI-compatible, so DeepSeek or other domestic models can be used by changing environment variables:
+大模型接口兼容 OpenAI 格式；修改环境变量即可使用 DeepSeek 等模型：
 
 ```env
 LLM_BASE_URL=https://api.deepseek.com
@@ -228,9 +205,9 @@ LLM_MODEL=deepseek-chat
 LLM_API_KEY=your_key
 ```
 
-## Image Strategy
+## 图片与封面
 
-Set `IMAGE_PROVIDER=seedream` to generate covers through the official Volcengine Ark API:
+设置 `IMAGE_PROVIDER=seedream`，可通过火山引擎方舟接口生成封面：
 
 ```env
 IMAGE_PROVIDER=seedream
@@ -238,59 +215,49 @@ ARK_API_KEY=your_ark_key
 SEEDREAM_MODEL=your_enabled_model_id
 ```
 
-Copy the complete model ID (or endpoint ID) from the Ark console's API example. Enable that model in the same account as the API key. Seedream is billed separately from Jimeng consumer subscriptions. Never commit real API keys.
+模型 ID（或接入点 ID）应按方舟控制台的 API 示例填写，并在同一账号启用。即梦消费者订阅与 Seedream API 分开计费。真实 API Key 不得提交到 Git。
 
-Local configuration belongs in `.env`; production configuration belongs in `/opt/media-agent/.env.production`. After updating production configuration, recreate the app container with `docker compose --env-file .env.production -f docker-compose.prod.yml up -d app`.
+本地配置放在 `.env`；生产配置放在 `/opt/media-agent/.env.production`。修改生产配置后，运行 `docker compose --env-file .env.production -f docker-compose.prod.yml up -d app` 重建应用容器。
 
-Both one-click generation and individual cover regeneration use this setting. Seedream requests one image at 2560x1440 for WeChat or 1728x2304 for Xiaohongshu, then saves the existing delivery sizes (1600x900 / 1080x1440) locally. Choose a model supporting these sizes; API failures stop generation without silently switching to another paid provider. Visible AI watermarks are enabled.
+一键生成和单独重做封面都会读取图片提供方设置。Seedream 为公众号请求 2560×1440 图片，为小红书请求 1728×2304 图片，然后在本地保存既有交付尺寸（1600×900 / 1080×1440）。所选模型须支持这些尺寸；接口失败时会停止，不会悄悄切换到其他付费提供方。图片请求关闭可见水印，并要求画面不含文字；仍应人工检查实际结果。
 
-Cover generation now requires the final article for the selected channel. The configured LLM extracts a short Chinese headline (up to 24 characters), a visual scene, and an exact supporting quote from that article. The saved `cover_copy` records these fields and the article fingerprint; `cover_image.prompt` records the actual image request. Old planning prompts are not reused when regenerating a cover.
+封面生成基于所选渠道的最终文章。大模型从文章中提取不超过 24 字的中文标题建议、视觉场景，以及逐字引用的支撑句。保存的 `cover_copy` 记录这些字段和文章指纹；`cover_image.prompt` 记录实际图片请求。重做封面时不再使用旧策划提示词。
 
-All image-generation prompts request a text-free background: no headline, letters, numbers, slogans, pseudo-text, or added watermark. The extracted headline remains in `cover_copy` and the workbench as an unused suggestion for a future local text-overlay step. Image dimensions are set through API parameters, not written into the prompt. Xiaohongshu continues to add its note title in the existing local layout renderer; WeChat currently ships the text-free image as generated. CLI cover generation requires `--use-llm` or an existing `--wechat-content-html` article. When an existing HTML article is selected, its extracted text is the cover source; scripts, styles and markup are excluded. Cover validation also rejects known factual reversals using the same fact checks as article generation.
+图片提示词要求无字背景：不生成标题、字母、数字、标语、伪文字或额外水印。标题建议保留在 `cover_copy` 和工作台中，供以后需要本地叠字时使用；当前公众号交付的是无字封面。尺寸通过 API 参数指定，不写进图片提示词。小红书仍由现有本地布局器添加笔记标题。命令行生成封面需要 `--use-llm`，或已有的 `--wechat-content-html` 文章；选择现有 HTML 时，只提取正文文字，排除脚本、样式和标记。封面核查也会复用正文事实检查，拦截已知事实反转。
 
-Existing installations default to Replicate. Set `IMAGE_PROVIDER=replicate` to switch back.
-
-Configure Replicate like this:
+已有安装默认使用 Replicate；设置 `IMAGE_PROVIDER=replicate` 可显式切换。配置示例：
 
 ```env
 REPLICATE_API_TOKEN=your_key
 REPLICATE_COVER_MODEL=black-forest-labs/flux-1.1-pro
 ```
 
-If the Python `replicate` package is installed, the project uses `replicate.run(...)`. If it is not installed, it falls back to Replicate's HTTP API with the same token.
+已安装 Python `replicate` 包时调用 `replicate.run(...)`；否则使用同一令牌通过 Replicate HTTP API 请求。
 
-## WeChat Cover Strategy
+### 公众号封面上传
 
-Do not hardcode `thumb_media_id` in `.env`. Each article cover should use this flow:
+不要在 `.env` 中写死 `thumb_media_id`。每篇文章按以下顺序处理：
 
 ```text
-generate cover -> upload as WeChat permanent thumb material -> receive media_id -> set articles[0].thumb_media_id -> submit draft
+生成封面 → 上传为微信永久缩略图素材 → 获取 media_id → 设置 articles[0].thumb_media_id → 提交草稿
 ```
 
-The provider boundary for this is `WeChatDraftPublisher.upload_thumb_material()`.
+相关接口封装在 `WeChatDraftPublisher.upload_thumb_material()`。
 
-## WeChat Formatting Strategy
+### 公众号排版
 
-The project uses the installed skill at `.agents/skills/gzh-design` for formatting rules, validation, and preview wrapping.
+项目使用 `.agents/skills/gzh-design` 中的规则、校验器和预览工具。当前适配器将 Markdown 或生成的公众号大纲转换为 Markdown，再输出适合微信的 `<section>...</section>` 片段，默认主题为「摸鱼绿（moyu-green）」：
 
-Current MVP adapter:
+- 校验脚本：`.agents/skills/gzh-design/scripts/validate_gzh_html.py`
+- 预览脚本：`.agents/skills/gzh-design/scripts/wrap_preview.py`
 
-- Theme: `摸鱼绿(moyu-green)`.
-- Input: Markdown or generated WeChat outline converted to Markdown.
-- Output: WeChat-safe `<section>...</section>` fragment.
-- Validation: `.agents/skills/gzh-design/scripts/validate_gzh_html.py`.
-- Preview: `.agents/skills/gzh-design/scripts/wrap_preview.py`.
+## 内容安全
 
-## Safety Rules
+- 不承诺赚钱收益。
+- 不发布未经核实的医疗诊断或治疗结论。
+- 最终公开发布前保留人工确认。
+- API Key 存放在 `.env`，不要提交真实密钥。
 
-- Do not promise income results.
-- Do not publish health diagnosis or treatment claims.
-- Keep human confirmation before final publishing.
-- Keep API keys in `.env`; never commit real secrets.
+## 许可证
 
-## License
-
-The original code in this repository is licensed under the [MIT License](LICENSE).
-The bundled `gzh-design` skill in `.agents/skills/gzh-design` is a third-party
-component licensed separately under [AGPL-3.0](.agents/skills/gzh-design/LICENSE).
-Its own copyright and license terms remain in effect.
+本仓库的原创代码采用 [MIT 许可证](LICENSE)。内置的第三方 `gzh-design` 技能位于 `.agents/skills/gzh-design`，单独采用其 [AGPL-3.0 许可证](.agents/skills/gzh-design/LICENSE)；其原作者版权和许可条款继续有效。

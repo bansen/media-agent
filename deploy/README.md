@@ -1,47 +1,40 @@
 # Media Agent 部署说明
 
-目标流程：
+当前仓库为公开仓库 [bansen/media-agent](https://github.com/bansen/media-agent)。部署流程：
 
 ```text
-本地提交到私有 Git 仓库 -> GitHub Actions 构建 GHCR 镜像 -> 服务器 Docker Compose 更新 -> Nginx 反向代理 -> Cloudflare 二级域名解析
+推送 main → GitHub Actions 运行测试 → 构建并推送 GHCR 镜像 → 服务器 Docker Compose 更新 → Nginx 反向代理 → Cloudflare 域名解析
 ```
 
-## 1. 发布到私有 Git 仓库
+## 1. 推送代码
 
-不要提交 .env，真实密钥只放在本机和服务器。
-
-如果已经有私有仓库：
+不要提交 .env 或 `.env.production`；真实密钥只保留在本机、GitHub Actions Secrets 和服务器。仓库已配置 Git 远端时，正常提交并推送即可：
 
 ```bash
-GIT_REMOTE_URL=git@github.com:bansen/media-agent.git \
-COMMIT_MESSAGE="Deploy media agent" \
-./scripts/publish_private_repo.sh
+git add <已检查的文件>
+git commit -m "说明本次修改"
+git push origin main
 ```
 
-如果没有仓库，并且本机已登录 GitHub CLI：
+推送 `main` 会触发 `.github/workflows/deploy.yml`。它先运行测试；测试通过后构建镜像并部署。仓库公开不代表部署密钥公开，密钥仍需在 GitHub Actions Secrets 中单独配置。
 
-```bash
-gh auth login
-REPO_NAME=media-agent ./scripts/publish_private_repo.sh
-```
+`scripts/publish_private_repo.sh` 是最初创建**私有**仓库时的辅助脚本；当前仓库已公开，日常更新无需运行它。
 
-当前机器暂未检测到 `gh`，所以更稳的第一步是：你先安装并登录 GitHub CLI，或手动创建 private repo 后把 SSH 地址给脚本。
+## 2. 配置 GitHub Actions Secrets
 
-## 2. GitHub Actions Secrets
+在仓库的 `Settings → Secrets and variables → Actions` 中配置：
 
-参考菩提阁项目，在 GitHub 仓库 `Settings -> Secrets and variables -> Actions` 配置：
+- `ALIYUN_HOST`：ECS 公网 IP 或域名。
+- `ALIYUN_USER`：SSH 用户，例如 `root`。
+- `ALIYUN_SSH_KEY`：SSH 私钥内容。
+- `ALIYUN_SSH_PASSPHRASE`：私钥的密码短语；没有则留空。
+- `ALIYUN_SSH_PORT`：SSH 端口，默认 `22`。
 
-- `ALIYUN_HOST`: ECS 公网 IP 或域名
-- `ALIYUN_USER`: SSH 用户，例如 `root`
-- `ALIYUN_SSH_KEY`: 私钥内容
-- `ALIYUN_SSH_PASSPHRASE`: 如果私钥创建时设置了密码短语，就填这个；无密码私钥可不填
-- `ALIYUN_SSH_PORT`: SSH 端口，默认 `22`
+工作流会使用 GitHub 提供的 `GITHUB_TOKEN` 登录 GHCR。推送 `main` 后，Actions 构建镜像，并将部署文件同步到服务器 `/opt/media-agent`。
 
-推送到 `main` 后，Actions 会运行测试、构建 Docker 镜像并部署到服务器 `/opt/media-agent`。
+## 3. 服务器运行
 
-## 3. 服务器运行方式
-
-推荐用 Docker Compose 跑服务，只对服务器本机暴露 `127.0.0.1:8000`：
+推荐使用 Docker Compose，应用端口仅绑定服务器本机 `127.0.0.1:8000`：
 
 ```bash
 mkdir -p /opt/media-agent
@@ -49,15 +42,15 @@ cd /opt/media-agent
 sh scripts/deploy.sh
 ```
 
-首次部署时，如果服务器上没有 `.env.production`，部署脚本会先从 `.env.example` 创建一个默认文件：
+首次部署时，如果服务器没有 `.env.production`，部署脚本会从 `.env.example` 创建配置文件：
 
 ```bash
 cp .env.example .env.production
 ```
 
-然后你需要登录服务器填写 DeepSeek、Replicate、微信公众号等真实密钥；已有 `.env.production` 时部署不会覆盖。
+随后在服务器上填写模型、图片和微信公众号等实际凭据。后续部署不会覆盖已有的 `.env.production`。
 
-如果启用 WebSearch MCP 读取 GitHub、官网或文档链接，已有 `.env.production` 还需要补充：
+如启用 WebSearch MCP 读取 GitHub、官网或文档链接，需在服务器 `.env.production` 中补充：
 
 ```env
 WEBSEARCH_MCP_ENABLED=true
@@ -67,36 +60,36 @@ WEBSEARCH_MCP_TIMEOUT=60
 TAVILY_API_KEY=your_tavily_key
 ```
 
-## 4. Nginx 二级域名
+## 4. Nginx 与二级域名
 
-GitHub Actions 会把 `deploy/nginx.media-agent.conf` 同步到服务器，并在服务器安装了 Nginx 时自动写入：
+GitHub Actions 将 `deploy/nginx.media-agent.conf` 同步到服务器。服务器已安装 Nginx 时，工作流会将它写入：
 
 ```text
 /etc/nginx/conf.d/media-agent.conf
 ```
 
-域名使用：
+当前域名：
 
 ```text
 media-agent.createbeauty.top
 ```
 
-Cloudflare 里手动配置：
+Cloudflare DNS 记录可配置为：
 
 - 类型：`A`
 - 名称：`media-agent`
 - 内容：服务器公网 IP
-- 代理状态：先用 DNS only，确认正常后再按需开启代理
+- 代理状态：先选 `DNS only`，确认服务正常后再按需开启代理
 
-## 5. 手动部署脚本
+## 5. 部署脚本与镜像清理
 
-`scripts/deploy.sh` 会在服务器 `/opt/media-agent` 下启动最新镜像。GitHub Actions 会自动同步 `docker-compose.prod.yml`、`scripts/deploy.sh`、`.env.example` 和 Nginx 配置，一般不需要本地手动运行。
+`scripts/deploy.sh` 在服务器 `/opt/media-agent` 下启动最新镜像。GitHub Actions 会同步 `docker-compose.prod.yml`、`scripts/deploy.sh`、`.env.example` 和 Nginx 配置；通常无须在本地手动运行部署脚本。
 
-每次部署拉取镜像后，脚本最多等待 120 秒，确认 Compose 服务处于运行状态（有健康检查的服务须健康），再执行 `docker image prune --all --force`，清理这台服务器上所有未被任何容器引用的镜像，包括其他项目的闲置镜像和带标签旧镜像。正在运行或已停止容器引用的镜像均保留；不清理容器、数据卷、数据库、文章或图片。旧版本不再保留本地镜像副本，需要回滚时从 GHCR 重新拉取对应版本。
+每次拉取镜像后，脚本最多等待 120 秒，确认 Compose 服务正常运行（有健康检查的服务还须处于健康状态），然后执行 `docker image prune --all --force`。这会清理该服务器上**所有**未被容器引用的镜像，包括其他项目闲置镜像和带标签旧镜像。运行中或已停止的容器所引用的镜像会保留；容器、数据卷、数据库、文章和图片不会清理。需要回滚时，可从 GHCR 重新拉取旧版本镜像。
 
-拉取或启动失败时不执行清理；清理失败会使部署报错，清理释放的空间由 Docker 输出到部署日志。本地手动部署入口也调用同一脚本。
+拉取或启动失败时不执行清理；清理失败会让部署报错，释放空间的结果会记录在部署日志中。本地手动部署入口也调用同一脚本。
 
-如需从本地手动触发服务器部署，可使用：
+如需从本地手动触发服务器部署：
 
 ```bash
 export DEPLOY_HOST=<server-ip>
@@ -105,4 +98,4 @@ export REPO_URL=https://github.com/bansen/media-agent.git
 ./deploy/deploy_server.sh
 ```
 
-Nginx 配置可由 Actions 自动启用；如果服务器没有安装 Nginx，脚本会跳过并在 Actions 日志中提示。
+如果服务器未安装 Nginx，工作流会跳过反向代理配置，并在 Actions 日志中说明。
