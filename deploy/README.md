@@ -68,16 +68,16 @@ GitHub Actions 将 `deploy/nginx.media-agent.conf` 同步到服务器。服务�
 /etc/nginx/conf.d/media-agent.conf
 ```
 
-当前域名：
+示例域名（部署时替换为自己的域名）：
 
 ```text
-media-agent.createbeauty.top
+xxx.example.com
 ```
 
 Cloudflare DNS 记录可配置为：
 
 - 类型：`A`
-- 名称：`media-agent`
+- 名称：`xxx`
 - 内容：服务器公网 IP
 - 代理状态：先选 `DNS only`，确认服务正常后再按需开启代理
 

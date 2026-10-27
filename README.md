@@ -168,12 +168,14 @@ WECHAT_ACCESS_TOKEN=
 - **网站登录**：识别内容工作台用户，并创建本地会话。
 - **微信开放平台公众号授权**：取得向用户公众号提交草稿的权限，无须向该用户索取 AppSecret。
 
+以下 `xxx.example.com` 仅为示例；部署时须替换成实际域名，并在微信开放平台配置相同的回调地址。回调 URL 需要能接收微信服务器的请求，域名本身不是密钥。
+
 网站登录配置：
 
 ```env
 WECHAT_LOGIN_APP_ID=
 WECHAT_LOGIN_APP_SECRET=
-WECHAT_LOGIN_REDIRECT_URI=https://media-agent.createbeauty.top/auth/wechat/callback
+WECHAT_LOGIN_REDIRECT_URI=https://xxx.example.com/auth/wechat/callback
 WECHAT_LOGIN_SCOPE=snsapi_login
 ```
 
@@ -184,7 +186,7 @@ WECHAT_COMPONENT_APP_ID=
 WECHAT_COMPONENT_APP_SECRET=
 WECHAT_COMPONENT_TOKEN=
 WECHAT_COMPONENT_AES_KEY=
-WECHAT_COMPONENT_AUTH_REDIRECT_URI=https://media-agent.createbeauty.top/auth/wechat-official/callback
+WECHAT_COMPONENT_AUTH_REDIRECT_URI=https://xxx.example.com/auth/wechat-official/callback
 WECHAT_COMPONENT_VERIFY_TICKET=
 WECHAT_COMPONENT_ACCESS_TOKEN=
 ```
@@ -192,7 +194,7 @@ WECHAT_COMPONENT_ACCESS_TOKEN=
 `WECHAT_COMPONENT_VERIFY_TICKET` 通常由微信推送至第三方平台事件接收接口。首次部署时，也可以先配置有效的 `WECHAT_COMPONENT_ACCESS_TOKEN` 验证授权流程，之后再改为自动处理加密事件。微信开放平台的授权事件 URL：
 
 ```text
-https://media-agent.createbeauty.top/wechat/component/notify
+https://xxx.example.com/wechat/component/notify
 ```
 
 ## 模型配置

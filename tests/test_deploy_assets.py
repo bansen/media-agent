@@ -67,7 +67,7 @@ class DeployAssetTests(unittest.TestCase):
         self.assertIn("不要提交 .env", docs)
         self.assertIn("Cloudflare", docs)
         self.assertIn("二级域名", docs)
-        self.assertIn("media-agent.createbeauty.top", docs)
+        self.assertIn("xxx.example.com", docs)
 
     def test_github_actions_matches_putiyuan_style_docker_deploy(self):
         workflow = (PROJECT_ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")

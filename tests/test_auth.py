@@ -76,7 +76,7 @@ class AuthTests(unittest.TestCase):
             WeChatLoginConfig(
                 app_id="wx-app",
                 app_secret="secret",
-                redirect_uri="https://media-agent.createbeauty.top/auth/wechat/callback",
+                redirect_uri="https://xxx.example.com/auth/wechat/callback",
             )
         )
 
@@ -87,7 +87,7 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(parsed.netloc, "open.weixin.qq.com")
         self.assertEqual(parsed.path, "/connect/qrconnect")
         self.assertEqual(params["appid"], ["wx-app"])
-        self.assertEqual(params["redirect_uri"], ["https://media-agent.createbeauty.top/auth/wechat/callback"])
+        self.assertEqual(params["redirect_uri"], ["https://xxx.example.com/auth/wechat/callback"])
         self.assertEqual(params["response_type"], ["code"])
         self.assertEqual(params["scope"], ["snsapi_login"])
         self.assertEqual(params["state"], ["STATE123"])
@@ -168,7 +168,7 @@ class AuthTests(unittest.TestCase):
                 app_secret="component-secret",
                 token="verify-token",
                 aes_key="abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
-                auth_redirect_uri="https://media-agent.createbeauty.top/auth/wechat-official/callback",
+                auth_redirect_uri="https://xxx.example.com/auth/wechat-official/callback",
             )
         )
 
@@ -182,7 +182,7 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(params["pre_auth_code"], ["PRE_AUTH_CODE"])
         self.assertEqual(
             params["redirect_uri"],
-            ["https://media-agent.createbeauty.top/auth/wechat-official/callback"],
+            ["https://xxx.example.com/auth/wechat-official/callback"],
         )
         self.assertEqual(params["auth_type"], ["3"])
 

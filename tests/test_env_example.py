@@ -37,7 +37,7 @@ class EnvExampleTests(unittest.TestCase):
         self.assertIn("WECHAT_COMPONENT_TOKEN=", env_example)
         self.assertIn("WECHAT_COMPONENT_AES_KEY=", env_example)
         self.assertIn(
-            "WECHAT_COMPONENT_AUTH_REDIRECT_URI=https://media-agent.createbeauty.top/auth/wechat-official/callback",
+            "WECHAT_COMPONENT_AUTH_REDIRECT_URI=https://xxx.example.com/auth/wechat-official/callback",
             env_example,
         )
 

@@ -2028,7 +2028,8 @@ AUTH_SETUP_HTML = r"""<!doctype html>
     <p>请在服务器的 <code>.env.production</code> 中配置微信开放平台网站应用参数：</p>
     <code>WECHAT_LOGIN_APP_ID=</code>
     <code>WECHAT_LOGIN_APP_SECRET=</code>
-    <code>WECHAT_LOGIN_REDIRECT_URI=https://media-agent.createbeauty.top/auth/wechat/callback</code>
+    <code>WECHAT_LOGIN_REDIRECT_URI=https://xxx.example.com/auth/wechat/callback</code>
+    <p>请将示例域名 xxx.example.com 替换为实际部署域名。</p>
     <p>配置完成并重新部署后，点击试用会跳转微信扫码授权登录。</p>
     <p><a href="/">返回首页</a></p>
   </main>
@@ -2061,7 +2062,8 @@ WECHAT_COMPONENT_SETUP_HTML = r"""<!doctype html>
     <code>WECHAT_COMPONENT_APP_SECRET=</code>
     <code>WECHAT_COMPONENT_TOKEN=</code>
     <code>WECHAT_COMPONENT_AES_KEY=</code>
-    <code>WECHAT_COMPONENT_AUTH_REDIRECT_URI=https://media-agent.createbeauty.top/auth/wechat-official/callback</code>
+    <code>WECHAT_COMPONENT_AUTH_REDIRECT_URI=https://xxx.example.com/auth/wechat-official/callback</code>
+    <p>请将示例域名 xxx.example.com 替换为实际部署域名。</p>
     <code>WECHAT_COMPONENT_VERIFY_TICKET=</code>
     <p>如果已经有可用的 component_access_token，也可以临时配置 <code>WECHAT_COMPONENT_ACCESS_TOKEN=</code> 跑通授权链路。</p>
     <p><a href="/app">返回工作台</a></p>

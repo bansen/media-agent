@@ -24,7 +24,7 @@ class ConfigTests(unittest.TestCase):
                         "WECHAT_COMPONENT_APP_SECRET=component-secret",
                         "WECHAT_COMPONENT_TOKEN=component-token",
                         "WECHAT_COMPONENT_AES_KEY=component-aes-key",
-                        "WECHAT_COMPONENT_AUTH_REDIRECT_URI=https://media-agent.createbeauty.top/auth/wechat-official/callback",
+                        "WECHAT_COMPONENT_AUTH_REDIRECT_URI=https://xxx.example.com/auth/wechat-official/callback",
                         "WECHAT_COMPONENT_VERIFY_TICKET=component-ticket",
                         "WECHAT_COMPONENT_ACCESS_TOKEN=component-access-token",
                         "BAIDU_SEARCH_API_KEY=baidu-secret",
@@ -64,7 +64,7 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(config.websearch_mcp_timeout, 45)
             self.assertEqual(
                 config.wechat_component_auth_redirect_uri,
-                "https://media-agent.createbeauty.top/auth/wechat-official/callback",
+                "https://xxx.example.com/auth/wechat-official/callback",
             )
             self.assertEqual(config.redacted_status()["LLM_API_KEY"], "SET")
             self.assertEqual(config.redacted_status()["DATABASE_URL"], "SET")
